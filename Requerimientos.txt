@@ -1,0 +1,55 @@
+Desarrollar un DASHBOARD para la Autoridad Nacional del Agua
+
+Tenemos como insumo 6 Reportes, por ello el dashboard tendrá 6 pestañas u opciones
+
+Lo primero a desarrollar será un dashboard para Documentos Ingresados por las ventanilla a nivel nacional. El objetivo es monitorear el ingreso, validación(estado derivado) y lo que no se valida (estado calidad), observado (que tiene pendientes de subsanación) o archivado que no paso el control de calidad o ingreso con otro CUT (código único de tramite. 
+
+1. Visibilidad y Accesibilidad
+
+•	Interfaz Intuitiva: Debe ser fácil de usar y entender, con una disposición clara de la información.
+•	Acceso Rápido: Facilitar el acceso a los documentos y datos más importantes sin navegación compleja.
+
+ 
+2. Información Clave
+
+Mostrar la cantidad Total de documentos ingresados por la ventanilla Digital y Física. Debe contar los documentos en Calidad, Observados, Archivados y Derivados.
+
+Mostrar la cantidad por: Sede Ingreso, Ámbito ingreso
+
+	Documentos Ingresados Mensual, diario : por Tipo de Origen (Digital – Físico)
+
+	Documentos Ingresados Mensual, diario : por Tipo Trámite (TUPA – NO TUPA)
+
+	Estado Documentos Ingresados – Calidad, Observados, Archivados y Derivados
+
+TOTAL TUPA / NO TUPA (cantidad y porcentaje)
+
+Mostrar la cantidad total por cada estado descrito.
+Mostrar la cantidad de documentos DERIVADOS en estado ATENDIDO y PENDIENTE.
+Mostrar la cantidad por año
+
+Tiempo promedio de validación ( esto se mide fecha_estado (solo de estado Derivado) - Fecha Registra ) 
+
+segun norma el plazao para validar es de 48 horas (habiles)
+
+
+Top de los usuarios que mas documentos validan (campo Usu_Ventanilla)
+	
+
+3. Filtros
+•	Categorías y Etiquetas: Opciones para organizar y clasificar documentos según categorías, etiquetas, o tipos.
+	Fecha inicio – Fecha Fin  (FECHA INGRESA)
+	Tipo de Origen (Digital – Físico)
+	Tipo Reporte (Ingresados, Atendidos, Pendientes)
+	Tipo de Trámite (Interno – Externo)
+	Tipo Trámite (TUPA – NO TUPA)
+4. Análisis y Reportes
+•	Generación de Reportes: Capacidad para crear y exportar reportes sobre el estado y manejo de documentos.
+Todo resumen debe permitir exportar reporte en formato Excel, PDF, PNG y otros formatos recomendados.
+
+7. Personalización y Configuración
+•	Configurabilidad: Opciones para ajustar el dashboard según las necesidades y preferencias del usuario.
+
+8. Usabilidad y Rendimiento
+•	Velocidad de Carga: El dashboard debe cargar rápidamente incluso con grandes volúmenes de datos.
+•	Diseño Responsivo: Adaptación a diferentes dispositivos y tamaños de pantalla, asegurando una buena experiencia en móviles y tablets.

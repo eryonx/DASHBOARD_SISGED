@@ -1,0 +1,14 @@
+# Carpetas de dependencias y compilación
+node_modules/
+dist/
+.vite/
+
+# Archivos de datos pesados (NO se subirán a GitHub para evitar el límite de 100MB)
+Reporte de Ingresado Ventanilla GEN.csv
+Reporte de Ingresado Ventanilla GEN (29).xlsx
+Reporte_Ingresados_Pendientes.csv
+temp_reporte.xlsx
+
+# Archivos del sistema y temporales
+.DS_Store
+Thumbs.db
