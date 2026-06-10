@@ -101,7 +101,7 @@ export default function App() {
 
   // Load dashboard data on mount
   useEffect(() => {
-    fetch('/data/dashboard_data.json')
+    fetch(`${import.meta.env.BASE_URL}data/dashboard_data.json`)
       .then((res) => {
         if (!res.ok) throw new Error('No se pudo cargar el archivo de datos.');
         return res.json();
@@ -688,7 +688,7 @@ export default function App() {
 
     if (!detailedData) {
       setExportLoading(true);
-      fetch('/data/detailed_data.json')
+      fetch(`${import.meta.env.BASE_URL}data/detailed_data.json`)
         .then((res) => {
           if (!res.ok) throw new Error('No se pudo cargar el archivo detallado.');
           return res.json();

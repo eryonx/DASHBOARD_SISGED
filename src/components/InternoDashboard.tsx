@@ -89,7 +89,7 @@ export const InternoDashboard: React.FC = () => {
 
   // Load real data from server
   useEffect(() => {
-    fetch('/data/interno_dashboard_data.json')
+    fetch(`${import.meta.env.BASE_URL}data/interno_dashboard_data.json`)
       .then(res => {
         if (!res.ok) throw new Error('No se pudo cargar el archivo de datos del servidor.');
         return res.json();
@@ -165,11 +165,11 @@ export const InternoDashboard: React.FC = () => {
       };
     });
 
-    const usedesMap: Record<number, Record<number, UltimoSedeRecord>> = {}; 
+    const usedesMap: Record<number, Record<number, UltimoSedeRecord>> = {};
 
     data.records.forEach(rec => {
       const [gIdx, usIdx, ueIdx, tupaCode, procIdx, _creationYear, _ingresoYear, bandejaIdx, dateIdx, origenCode] = rec;
-      
+
       const tupaVal = tupaCode === 0 ? 1 : 0;
       const noTupaVal = tupaCode === 1 ? 1 : 0;
 
@@ -185,7 +185,7 @@ export const InternoDashboard: React.FC = () => {
         const dStr = data.metadata.dates[dateIdx];
         if (dStr < filterStartDate || dStr > filterEndDate) return;
       }
-      
+
       const grupo = gruposMap[gIdx];
       if (!grupo) return;
 
@@ -196,8 +196,8 @@ export const InternoDashboard: React.FC = () => {
       if (!usedesMap[gIdx]) usedesMap[gIdx] = {};
       if (!usedesMap[gIdx][usIdx]) {
         usedesMap[gIdx][usIdx] = {
-            name: data.metadata.ultimo_sedes[usIdx] || 'Sin Oficina',
-            total: 0, noTupa: 0, tupa: 0, escritorios: {}
+          name: data.metadata.ultimo_sedes[usIdx] || 'Sin Oficina',
+          total: 0, noTupa: 0, tupa: 0, escritorios: {}
         };
       }
       const sedeEntry = usedesMap[gIdx][usIdx];
@@ -261,7 +261,7 @@ export const InternoDashboard: React.FC = () => {
 
     data.records.forEach(rec => {
       const [gIdx, usIdx, _, tupaCode, procIdx, creationYear, ingresoYear, bandejaIdx, dateIdx, origenCode] = rec;
-      
+
       // Apply same filters for metrics
       if (filterSede === 0) return; // Sede Central has no records in this db yet
       if (filterGrupo !== -1 && gIdx !== filterGrupo) return;
@@ -540,7 +540,7 @@ export const InternoDashboard: React.FC = () => {
                     </div>
                   </div>
                 );
-            })}
+              })}
           </div>
         </div>
 
@@ -566,17 +566,17 @@ export const InternoDashboard: React.FC = () => {
           <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
             {/* Breadcrumb Navigation */}
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '11px', fontWeight: '700', padding: '8px 12px', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)' }}>
-              <span 
+              <span
                 style={{ color: drilldownPath.length === 0 ? 'var(--text-primary)' : 'var(--primary)', cursor: drilldownPath.length === 0 ? 'default' : 'pointer', transition: 'color var(--transition-fast)' }}
                 onClick={() => setDrilldownPath([])}
               >
                 Nacional (Todos los Ámbitos)
               </span>
-              
+
               {drilldownPath.length > 0 && (
                 <>
                   <span style={{ color: 'var(--text-muted)' }}>/</span>
-                  <span 
+                  <span
                     style={{ color: drilldownPath.length === 1 ? 'var(--text-primary)' : 'var(--primary)', cursor: drilldownPath.length === 1 ? 'default' : 'pointer', transition: 'color var(--transition-fast)' }}
                     onClick={() => setDrilldownPath([drilldownPath[0]])}
                   >
@@ -599,148 +599,148 @@ export const InternoDashboard: React.FC = () => {
             <div style={{ flex: 1, minHeight: '350px', marginTop: '12px', position: 'relative', width: '100%' }}>
               <div ref={svgContainerRef} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
                 {(() => {
-                const level = drilldownPath.length;
-                let currentItems: { id: number | string, name: string, total: number, tupa: number, noTupa: number, rawId?: number }[] = [];
+                  const level = drilldownPath.length;
+                  let currentItems: { id: number | string, name: string, total: number, tupa: number, noTupa: number, rawId?: number }[] = [];
 
-                if (level === 0) {
-                  currentItems = sortedRawData.map(g => ({ id: g.idx, name: g.name, total: g.total, tupa: g.tupa, noTupa: g.noTupa, rawId: g.idx }));
-                } else if (level === 1) {
-                  const grupo = sortedRawData.find(g => g.idx === drilldownPath[0]);
-                  if (grupo) {
-                    currentItems = grupo.ultimoSedes.map((s, idx) => ({ id: idx, name: s.name, total: s.total, tupa: s.tupa, noTupa: s.noTupa, rawId: idx }));
-                  }
-                } else if (level === 2) {
-                  const grupo = sortedRawData.find(g => g.idx === drilldownPath[0]);
-                  if (grupo) {
-                    const sede = grupo.ultimoSedes[drilldownPath[1]];
-                    if (sede) {
-                      currentItems = Object.entries(sede.escritorios)
-                        .map(([name, stats], idx) => ({ id: idx, name, total: stats.total, tupa: stats.tupa, noTupa: stats.noTupa }))
-                        .sort((a, b) => b.total - a.total);
+                  if (level === 0) {
+                    currentItems = sortedRawData.map(g => ({ id: g.idx, name: g.name, total: g.total, tupa: g.tupa, noTupa: g.noTupa, rawId: g.idx }));
+                  } else if (level === 1) {
+                    const grupo = sortedRawData.find(g => g.idx === drilldownPath[0]);
+                    if (grupo) {
+                      currentItems = grupo.ultimoSedes.map((s, idx) => ({ id: idx, name: s.name, total: s.total, tupa: s.tupa, noTupa: s.noTupa, rawId: idx }));
+                    }
+                  } else if (level === 2) {
+                    const grupo = sortedRawData.find(g => g.idx === drilldownPath[0]);
+                    if (grupo) {
+                      const sede = grupo.ultimoSedes[drilldownPath[1]];
+                      if (sede) {
+                        currentItems = Object.entries(sede.escritorios)
+                          .map(([name, stats], idx) => ({ id: idx, name, total: stats.total, tupa: stats.tupa, noTupa: stats.noTupa }))
+                          .sort((a, b) => b.total - a.total);
+                      }
                     }
                   }
-                }
 
-                if (currentItems.length === 0) {
-                  return <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>No hay datos para mostrar en este nivel.</div>;
-                }
+                  if (currentItems.length === 0) {
+                    return <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>No hay datos para mostrar en este nivel.</div>;
+                  }
 
-                const maxVal = Math.max(...currentItems.map(i => Math.max(i.tupa, i.noTupa)), 1); // Grouped bars max height depends on max of individual stacks, not total
-                const barCount = currentItems.length;
-                const svgWidth = Math.max(containerWidth, barCount * 45);
-                const svgHeight = Math.max(350, containerHeight);
-                const chartBottomY = svgHeight - 120;
-                const chartHeight = chartBottomY - 20;
+                  const maxVal = Math.max(...currentItems.map(i => Math.max(i.tupa, i.noTupa)), 1); // Grouped bars max height depends on max of individual stacks, not total
+                  const barCount = currentItems.length;
+                  const svgWidth = Math.max(containerWidth, barCount * 45);
+                  const svgHeight = Math.max(350, containerHeight);
+                  const chartBottomY = svgHeight - 120;
+                  const chartHeight = chartBottomY - 20;
 
-                return (
-                  <div style={{ width: '100%', height: '100%', overflowX: 'auto', overflowY: 'hidden' }}>
-                    <svg width={svgWidth} height={svgHeight}>
-                      <defs>
-                        <linearGradient id="gradNoTupa" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#00dfd8" />
-                          <stop offset="100%" stopColor="#007cf0" />
-                        </linearGradient>
-                        <linearGradient id="gradTupa" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#ff0080" />
-                          <stop offset="100%" stopColor="#7928ca" />
-                        </linearGradient>
-                      </defs>
+                  return (
+                    <div style={{ width: '100%', height: '100%', overflowX: 'auto', overflowY: 'hidden' }}>
+                      <svg width={svgWidth} height={svgHeight}>
+                        <defs>
+                          <linearGradient id="gradNoTupa" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#00dfd8" />
+                            <stop offset="100%" stopColor="#007cf0" />
+                          </linearGradient>
+                          <linearGradient id="gradTupa" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#ff0080" />
+                            <stop offset="100%" stopColor="#7928ca" />
+                          </linearGradient>
+                        </defs>
 
-                      {/* Grid lines */}
-                      {[0, 0.25, 0.5, 0.75, 1].map((p, i) => (
-                        <line key={i} x1="40" y1={20 + chartHeight * p} x2={svgWidth - 20} y2={20 + chartHeight * p} stroke="rgba(255,255,255,0.03)" strokeWidth="1" strokeDasharray="4 4" />
-                      ))}
+                        {/* Grid lines */}
+                        {[0, 0.25, 0.5, 0.75, 1].map((p, i) => (
+                          <line key={i} x1="40" y1={20 + chartHeight * p} x2={svgWidth - 20} y2={20 + chartHeight * p} stroke="rgba(255,255,255,0.03)" strokeWidth="1" strokeDasharray="4 4" />
+                        ))}
 
-                      {/* Bars */}
-                      {currentItems.map((item, idx) => {
-                        const spacing = (svgWidth - 100) / Math.max(currentItems.length, 1);
-                        const groupWidth = Math.min(48, spacing * 0.7);
-                        const singleBarWidth = (groupWidth / 2) - 2;
-                        
-                        // Centered inside its cell
-                        const xPosCenter = 60 + spacing * 0.5 + idx * spacing;
-                        const xPosNoTupa = xPosCenter - groupWidth / 2;
-                        const xPosTupa = xPosCenter + 2;
-                        
-                        const heightTupa = (item.tupa / maxVal) * chartHeight;
-                        const heightNoTupa = (item.noTupa / maxVal) * chartHeight;
-                        
-                        const yTupa = chartBottomY - heightTupa;
-                        const yNoTupa = chartBottomY - heightNoTupa;
+                        {/* Bars */}
+                        {currentItems.map((item, idx) => {
+                          const spacing = (svgWidth - 100) / Math.max(currentItems.length, 1);
+                          const groupWidth = Math.min(48, spacing * 0.7);
+                          const singleBarWidth = (groupWidth / 2) - 2;
 
-                        const shortName = barCount > 15 && item.name.length > 15 
-                          ? item.name.substring(0, 15) + '...' 
-                          : item.name;
+                          // Centered inside its cell
+                          const xPosCenter = 60 + spacing * 0.5 + idx * spacing;
+                          const xPosNoTupa = xPosCenter - groupWidth / 2;
+                          const xPosTupa = xPosCenter + 2;
 
-                        return (
-                          <g 
-                            key={item.id} 
-                            style={{ cursor: level < 2 ? 'pointer' : 'default', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }}
-                            onClick={() => {
-                              if (level === 0 && item.rawId !== undefined) {
-                                setDrilldownPath([item.rawId]);
-                              } else if (level === 1 && item.rawId !== undefined) {
-                                setDrilldownPath([...drilldownPath, item.rawId]);
-                              }
-                            }}
-                            className="drilldown-bar-group"
-                          >
-                            <title>{item.name} | Total: {item.total} | TUPA: {item.tupa} | NO TUPA: {item.noTupa}</title>
-                            
-                            <rect x={xPosCenter - (groupWidth * 0.7)} y="10" width={groupWidth * 1.4} height={chartBottomY + 10} fill="rgba(255,255,255,0.02)" rx="8" style={{ opacity: 0, transition: 'opacity 0.2s' }} className="hover-bg-rect" />
+                          const heightTupa = (item.tupa / maxVal) * chartHeight;
+                          const heightNoTupa = (item.noTupa / maxVal) * chartHeight;
 
-                            {/* Background Tracks */}
-                            <rect x={xPosNoTupa} y={20} width={singleBarWidth} height={chartHeight} fill="rgba(255,255,255,0.04)" rx={singleBarWidth / 2} />
-                            <rect x={xPosTupa} y={20} width={singleBarWidth} height={chartHeight} fill="rgba(255,255,255,0.04)" rx={singleBarWidth / 2} />
+                          const yTupa = chartBottomY - heightTupa;
+                          const yNoTupa = chartBottomY - heightNoTupa;
 
-                            {/* Data Bars */}
-                            {heightNoTupa > 0 && (
-                              <rect x={xPosNoTupa} y={yNoTupa} width={singleBarWidth} height={heightNoTupa} fill="url(#gradNoTupa)" rx={singleBarWidth / 2} className="bar-rect" />
-                            )}
+                          const shortName = barCount > 15 && item.name.length > 15
+                            ? item.name.substring(0, 15) + '...'
+                            : item.name;
 
-                            {heightTupa > 0 && (
-                              <rect x={xPosTupa} y={yTupa} width={singleBarWidth} height={heightTupa} fill="url(#gradTupa)" rx={singleBarWidth / 2} className="bar-rect" />
-                            )}
-
-                            {/* No TUPA Label */}
-                            {heightNoTupa > 0 && (
-                              <text x={xPosNoTupa + singleBarWidth / 2} y={yNoTupa - 6} fill="#00dfd8" fontSize="9.5" fontWeight="800" textAnchor="middle">
-                                {formatNum(item.noTupa)}
-                              </text>
-                            )}
-
-                            {/* TUPA Label */}
-                            {heightTupa > 0 && (
-                              <text x={xPosTupa + singleBarWidth / 2} y={yTupa - 6} fill="#ff0080" fontSize="9.5" fontWeight="800" textAnchor="middle">
-                                {formatNum(item.tupa)}
-                              </text>
-                            )}
-
-                            {/* Group Total Text */}
-                            <text x={xPosCenter} y={chartBottomY + 16} fill="var(--text-primary)" fontSize="11" fontWeight="800" textAnchor="middle">
-                              {formatNum(item.total)}
-                            </text>
-
-                            {/* X-Axis Label */}
-                            <text 
-                              x={xPosCenter} 
-                              y={chartBottomY + 32} 
-                              fill="var(--text-secondary)" 
-                              fontSize="10" 
-                              fontWeight="600" 
-                              textAnchor="end"
-                              transform={`rotate(-40, ${xPosCenter}, ${chartBottomY + 32})`}
+                          return (
+                            <g
+                              key={item.id}
+                              style={{ cursor: level < 2 ? 'pointer' : 'default', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }}
+                              onClick={() => {
+                                if (level === 0 && item.rawId !== undefined) {
+                                  setDrilldownPath([item.rawId]);
+                                } else if (level === 1 && item.rawId !== undefined) {
+                                  setDrilldownPath([...drilldownPath, item.rawId]);
+                                }
+                              }}
+                              className="drilldown-bar-group"
                             >
-                              {shortName}
-                            </text>
-                          </g>
-                        );
-                      })}
-                      <line x1="40" y1={chartBottomY} x2={svgWidth - 20} y2={chartBottomY} stroke="rgba(255,255,255,0.15)" strokeWidth="2" />
-                    </svg>
-                  </div>
-                );
-              })()}
+                              <title>{item.name} | Total: {item.total} | TUPA: {item.tupa} | NO TUPA: {item.noTupa}</title>
+
+                              <rect x={xPosCenter - (groupWidth * 0.7)} y="10" width={groupWidth * 1.4} height={chartBottomY + 10} fill="rgba(255,255,255,0.02)" rx="8" style={{ opacity: 0, transition: 'opacity 0.2s' }} className="hover-bg-rect" />
+
+                              {/* Background Tracks */}
+                              <rect x={xPosNoTupa} y={20} width={singleBarWidth} height={chartHeight} fill="rgba(255,255,255,0.04)" rx={singleBarWidth / 2} />
+                              <rect x={xPosTupa} y={20} width={singleBarWidth} height={chartHeight} fill="rgba(255,255,255,0.04)" rx={singleBarWidth / 2} />
+
+                              {/* Data Bars */}
+                              {heightNoTupa > 0 && (
+                                <rect x={xPosNoTupa} y={yNoTupa} width={singleBarWidth} height={heightNoTupa} fill="url(#gradNoTupa)" rx={singleBarWidth / 2} className="bar-rect" />
+                              )}
+
+                              {heightTupa > 0 && (
+                                <rect x={xPosTupa} y={yTupa} width={singleBarWidth} height={heightTupa} fill="url(#gradTupa)" rx={singleBarWidth / 2} className="bar-rect" />
+                              )}
+
+                              {/* No TUPA Label */}
+                              {heightNoTupa > 0 && (
+                                <text x={xPosNoTupa + singleBarWidth / 2} y={yNoTupa - 6} fill="#00dfd8" fontSize="9.5" fontWeight="800" textAnchor="middle">
+                                  {formatNum(item.noTupa)}
+                                </text>
+                              )}
+
+                              {/* TUPA Label */}
+                              {heightTupa > 0 && (
+                                <text x={xPosTupa + singleBarWidth / 2} y={yTupa - 6} fill="#ff0080" fontSize="9.5" fontWeight="800" textAnchor="middle">
+                                  {formatNum(item.tupa)}
+                                </text>
+                              )}
+
+                              {/* Group Total Text */}
+                              <text x={xPosCenter} y={chartBottomY + 16} fill="var(--text-primary)" fontSize="11" fontWeight="800" textAnchor="middle">
+                                {formatNum(item.total)}
+                              </text>
+
+                              {/* X-Axis Label */}
+                              <text
+                                x={xPosCenter}
+                                y={chartBottomY + 32}
+                                fill="var(--text-secondary)"
+                                fontSize="10"
+                                fontWeight="600"
+                                textAnchor="end"
+                                transform={`rotate(-40, ${xPosCenter}, ${chartBottomY + 32})`}
+                              >
+                                {shortName}
+                              </text>
+                            </g>
+                          );
+                        })}
+                        <line x1="40" y1={chartBottomY} x2={svgWidth - 20} y2={chartBottomY} stroke="rgba(255,255,255,0.15)" strokeWidth="2" />
+                      </svg>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           </div>
@@ -749,7 +749,7 @@ export const InternoDashboard: React.FC = () => {
 
       {/* 5. Row 2: Three Widgets (Año Creación, Año Escritorio, Bandejas) */}
       <div className="interno-grid-row2">
-        
+
         {/* Widget 1: ANTIGÜEDAD DE PENDIENTES */}
         <div className="chart-card" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', height: '100%' }}>
           <div className="chart-card-header">
@@ -915,7 +915,7 @@ export const InternoDashboard: React.FC = () => {
             .map(([name, count], idx) => {
               const maxVal = Math.max(...Object.values(metrics.procedures).map(p => p.total), 1);
               const pctHeight = (count.total / maxVal) * 200;
-              
+
               const isTupa = count.tupa > count.noTupa;
               const barGradient = isTupa ? 'linear-gradient(180deg, #f59e0b, #ea580c)' : 'linear-gradient(180deg, #00dfd8, #007cf0)';
               const textColor = isTupa ? '#f59e0b' : '#00dfd8';
@@ -952,30 +952,30 @@ export const InternoDashboard: React.FC = () => {
         </div>
       </div>
 
-        {/* Bottom summary bar */}
-        <div style={{
-          marginTop: '16px', padding: '12px 16px',
-          borderRadius: 'var(--radius-sm)',
-          backgroundColor: 'rgba(56, 189, 248, 0.03)',
-          border: '1px solid rgba(56, 189, 248, 0.08)',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          flexWrap: 'wrap', gap: '12px'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10" />
-              <polyline points="12 6 12 12 16 14" />
-            </svg>
-            <span style={{ fontSize: '10.5px', fontWeight: '700', color: 'var(--text-secondary)' }}>
-              Reporte generado: <strong style={{ color: 'var(--text-primary)' }}>{new Date().toLocaleDateString('es-PE', { day: '2-digit', month: 'long', year: 'numeric' })}</strong>
-            </span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '10.5px', fontWeight: '700', color: 'var(--text-secondary)' }}>
-              Base de datos: <strong style={{ color: 'var(--primary)' }}>{formatNum(metrics.total)}</strong> registros procesados
-            </span>
-          </div>
+      {/* Bottom summary bar */}
+      <div style={{
+        marginTop: '16px', padding: '12px 16px',
+        borderRadius: 'var(--radius-sm)',
+        backgroundColor: 'rgba(56, 189, 248, 0.03)',
+        border: '1px solid rgba(56, 189, 248, 0.08)',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        flexWrap: 'wrap', gap: '12px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <polyline points="12 6 12 12 16 14" />
+          </svg>
+          <span style={{ fontSize: '10.5px', fontWeight: '700', color: 'var(--text-secondary)' }}>
+            Reporte generado: <strong style={{ color: 'var(--text-primary)' }}>{new Date().toLocaleDateString('es-PE', { day: '2-digit', month: 'long', year: 'numeric' })}</strong>
+          </span>
         </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ fontSize: '10.5px', fontWeight: '700', color: 'var(--text-secondary)' }}>
+            Base de datos: <strong style={{ color: 'var(--primary)' }}>{formatNum(metrics.total)}</strong> registros procesados
+          </span>
+        </div>
+      </div>
 
     </div>
   );
