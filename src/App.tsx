@@ -8,6 +8,8 @@ import { DataTables } from './components/DataTables';
 import { LeaderboardWidget } from './components/LeaderboardWidget';
 import { InternoDashboard } from './components/InternoDashboard';
 import { DestinationTable } from './components/DestinationTable';
+import { QrCodeModal } from './components/QrCodeModal';
+import { ExecutiveDashboard } from './components/ExecutiveDashboard';
 
 // Interfaces matching backend compression
 interface Metadata {
@@ -52,6 +54,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [detailedData, setDetailedData] = useState<any | null>(null);
   const [exportLoading, setExportLoading] = useState(false);
+  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
 
   // Filters State
   const [startDate, setStartDate] = useState('');
@@ -65,8 +68,8 @@ export default function App() {
   const [ambito, setAmbito] = useState(-1); // -1: All, index otherwise
   const [stateFilter, setStateFilter] = useState(-1); // -1: All, 0: Derivado, 1: Archivado, 2: Calidad, 3: Observado
 
-  // Tab navigation state (Ingresados Ventanilla is default)
-  const [activeTab, setActiveTab] = useState('ingresados-ventanilla');
+  // Tab navigation state (Panel Ejecutivo is default)
+  const [activeTab, setActiveTab] = useState('ejecutivo');
 
   // Sidebar Search State
   const [sidebarSearch, setSidebarSearch] = useState('');
@@ -84,6 +87,7 @@ export default function App() {
   };
 
   const navLinks = useMemo(() => [
+    { id: 'ejecutivo', label: 'Panel Ejecutivo ⭐' },
     { id: 'todas', label: 'Todas Las Páginas' },
     { id: 'ingresados-ventanilla', label: 'Ingresados Ventanilla' },
     { id: 'intercambio', label: 'Ingresados por Intercambio' },
@@ -788,6 +792,24 @@ export default function App() {
             <span className="profile-title">Jefe - UATD</span>
           </div>
         </div>
+
+        {/* Floating Toggle Handle for scrolling accessibility */}
+        <button
+          className="sidebar-toggle-handle"
+          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+          title={sidebarCollapsed ? "Mostrar menú lateral" : "Ocultar menú lateral"}
+          aria-label={sidebarCollapsed ? "Mostrar menú lateral" : "Ocultar menú lateral"}
+        >
+          {sidebarCollapsed ? (
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+          )}
+        </button>
       </aside>
 
       {/* 2. RIGHT MAIN CONTENT AREA */}
@@ -827,8 +849,20 @@ export default function App() {
               )}
             </button>
             <div className="header-title-section">
-              <h2>{activeTab === 'interno' ? 'Dashboard de Ingresados Internos' : 'Documentos ingresados por ventanilla'}</h2>
-              <p>{activeTab === 'interno' ? 'Consolidado y distribución de expedientes ingresados internamente a nivel nacional.' : 'Este dashboard consolida todos los documentos ingresados a través de las ventanillas físicas y virtuales a nivel nacional.'}</p>
+              <h2>
+                {activeTab === 'ejecutivo'
+                  ? 'Panel Ejecutivo de Control (Alta Dirección)'
+                  : activeTab === 'interno'
+                  ? 'Dashboard de Ingresados Internos'
+                  : 'Documentos ingresados por ventanilla'}
+              </h2>
+              <p>
+                {activeTab === 'ejecutivo'
+                  ? 'Consolidado estratégico y semaforización de expedientes netos (CUT Único) a nivel nacional.'
+                  : activeTab === 'interno'
+                  ? 'Consolidado y distribución de expedientes ingresados internamente a nivel nacional.'
+                  : 'Este dashboard consolida todos los documentos ingresados a través de las ventanillas físicas y virtuales a nivel nacional.'}
+              </p>
             </div>
           </div>
           <div className="header-actions-section">
@@ -854,12 +888,32 @@ export default function App() {
                     Atendidos
                   </button>
                 </div>
+                <button className="btn-outline" onClick={() => setIsQrModalOpen(true)} title="Compartir acceso rápido QR">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '4px' }}>
+                    <rect x="3" y="3" width="7" height="7" />
+                    <rect x="14" y="3" width="7" height="7" />
+                    <rect x="14" y="14" width="7" height="7" />
+                    <rect x="3" y="14" width="7" height="7" />
+                    <path d="M7 17h.01M17 17h.01M17 7h.01" />
+                  </svg>
+                  Compartir QR
+                </button>
                 <button className="btn-outline" onClick={() => document.getElementById('export-interno-btn')?.click()}>
                   Export data ↓
                 </button>
               </div>
             ) : (
               <>
+                <button className="btn-outline" onClick={() => setIsQrModalOpen(true)} title="Compartir acceso rápido QR">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '4px' }}>
+                    <rect x="3" y="3" width="7" height="7" />
+                    <rect x="14" y="3" width="7" height="7" />
+                    <rect x="14" y="14" width="7" height="7" />
+                    <rect x="3" y="14" width="7" height="7" />
+                    <path d="M7 17h.01M17 17h.01M17 7h.01" />
+                  </svg>
+                  Compartir QR
+                </button>
                 <button className="btn-outline" onClick={handleExportCSV} disabled={exportLoading}>
                   {exportLoading ? 'Cargando...' : 'Export data ↓'}
                 </button>
@@ -871,7 +925,9 @@ export default function App() {
           </div>
         </div>
 
-        {activeTab === 'interno' ? (
+        {activeTab === 'ejecutivo' ? (
+          <ExecutiveDashboard data={data!} />
+        ) : activeTab === 'interno' ? (
           <InternoDashboard />
         ) : (
           <>
@@ -1003,6 +1059,8 @@ export default function App() {
           </div>
         </div>
       )}
+
+      <QrCodeModal isOpen={isQrModalOpen} onClose={() => setIsQrModalOpen(false)} />
     </div>
   );
 }

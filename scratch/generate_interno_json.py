@@ -5,8 +5,8 @@ import time
 
 t_start = time.time()
 
-csv_path = r"c:\Users\Administrador\OneDrive - Autoridad Nacional del Agua (1)\SISGED\DASHBOARD_SISGED\Reporte_Ingresados_Pendientes.csv"
-output_dir = r"c:\Users\Administrador\OneDrive - Autoridad Nacional del Agua (1)\SISGED\DASHBOARD_SISGED\public\data"
+csv_path = "Reporte_Ingresados_Pendientes.csv"
+output_dir = "public/data"
 
 print("Loading CSV database...")
 df = pd.read_csv(csv_path, sep=';', encoding='utf-8-sig', encoding_errors='replace')
@@ -148,6 +148,14 @@ df['tupa_code'] = df['TUPA'].apply(lambda x: 0 if str(x).strip().upper() == 'TUP
 df['ORIGEN'] = df['ORIGEN'].fillna('INTERNO').astype(str)
 df['origen_code'] = df['ORIGEN'].apply(lambda x: 0 if str(x).strip().upper() == 'INTERNO' else 1)
 
+# Cut Index Mapping
+print("Mapping CUT identifiers...")
+cut_col = [col for col in df.columns if 'CUT' in col][0]
+df[cut_col] = df[cut_col].fillna('').astype(str).str.strip()
+unique_cuts = sorted(list(df[cut_col].unique()))
+cut_to_idx = {cut: idx for idx, cut in enumerate(unique_cuts)}
+df['cut_idx'] = df[cut_col].map(cut_to_idx).fillna(0).astype(int)
+
 # ====================================================================
 # Map indices
 # ====================================================================
@@ -174,6 +182,7 @@ ingreso_years = df['ingreso_year'].tolist()
 bandeja_idxs = df['bandeja_idx'].tolist()
 date_idxs = df['date_idx'].tolist()
 origen_codes = df['origen_code'].tolist()
+cut_idxs = df['cut_idx'].tolist()
 
 compact_records = []
 for i in range(len(df)):
@@ -187,7 +196,8 @@ for i in range(len(df)):
         ingreso_years[i],
         bandeja_idxs[i],
         date_idxs[i],
-        origen_codes[i]
+        origen_codes[i],
+        cut_idxs[i]
     ])
 
 # Structure final JSON
@@ -198,7 +208,8 @@ dashboard_data = {
         "ultimo_escritorios": ultimo_escritorios,
         "bandejas": bandejas,
         "procedimientos": procedimientos,
-        "dates": dates
+        "dates": dates,
+        "cuts": unique_cuts
     },
     "records": compact_records
 }

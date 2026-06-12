@@ -10,6 +10,7 @@ export default defineConfig({
     host: true
   },
   build: {
-    outDir: 'docs'
+    outDir: 'docs',
+    emptyOutDir: false
   }
 });

@@ -29,6 +29,7 @@ interface Metadata {
   bandejas: string[];
   procedimientos: string[];
   dates: string[];
+  cuts?: string[];
 }
 
 type InternoRecordTuple = [
@@ -41,7 +42,8 @@ type InternoRecordTuple = [
   number, // 6: ingreso_year
   number, // 7: bandeja_idx
   number, // 8: date_idx
-  number  // 9: origen_code (0=Interno, 1=Externo)
+  number, // 9: origen_code (0=Interno, 1=Externo)
+  number  // 10: cut_idx
 ];
 
 interface DashboardData {
@@ -168,7 +170,7 @@ export const InternoDashboard: React.FC = () => {
     const usedesMap: Record<number, Record<number, UltimoSedeRecord>> = {};
 
     data.records.forEach(rec => {
-      const [gIdx, usIdx, ueIdx, tupaCode, procIdx, _creationYear, _ingresoYear, bandejaIdx, dateIdx, origenCode] = rec;
+      const [gIdx, usIdx, ueIdx, tupaCode, procIdx, _creationYear, _ingresoYear, bandejaIdx, dateIdx, origenCode, _cutIdx] = rec;
 
       const tupaVal = tupaCode === 0 ? 1 : 0;
       const noTupaVal = tupaCode === 1 ? 1 : 0;
@@ -235,6 +237,8 @@ export const InternoDashboard: React.FC = () => {
         total: 0,
         noTupa: 0,
         tupa: 0,
+        uniqueCuts: 0,
+        duplicates: 0,
         listToDisplay: [] as { name: string, total: number, noTupa: number, tupa: number }[],
         gruposStaticList: [] as { name: string, total: number, noTupa: number, tupa: number }[],
         yearsCreation: {} as Record<number, number>,
@@ -259,8 +263,10 @@ export const InternoDashboard: React.FC = () => {
     const groupCounts: Record<string, { total: number; noTupa: number; tupa: number }> = {};
     const staticGroupCounts: Record<string, { total: number; noTupa: number; tupa: number }> = {};
 
+    const uniqueCutsSet = new Set<number>();
+
     data.records.forEach(rec => {
-      const [gIdx, usIdx, _, tupaCode, procIdx, creationYear, ingresoYear, bandejaIdx, dateIdx, origenCode] = rec;
+      const [gIdx, usIdx, _, tupaCode, procIdx, creationYear, ingresoYear, bandejaIdx, dateIdx, origenCode, cutIdx] = rec;
 
       // Apply same filters for metrics
       if (filterSede === 0) return; // Sede Central has no records in this db yet
@@ -274,6 +280,8 @@ export const InternoDashboard: React.FC = () => {
         const dStr = data.metadata.dates[dateIdx];
         if (dStr < filterStartDate || dStr > filterEndDate) return;
       }
+
+      uniqueCutsSet.add(cutIdx);
 
       const grupoName = data.metadata.grupos[gIdx];
       const ultimoSedeName = data.metadata.ultimo_sedes[usIdx];
@@ -371,6 +379,8 @@ export const InternoDashboard: React.FC = () => {
       total: totalPendientes,
       noTupa: noTupaCount,
       tupa: tupaCount,
+      uniqueCuts: uniqueCutsSet.size,
+      duplicates: totalPendientes - uniqueCutsSet.size,
       listToDisplay,
       gruposStaticList,
       yearsCreation,
@@ -433,7 +443,7 @@ export const InternoDashboard: React.FC = () => {
       />
 
       {/* 3. Main KPI Indicator Cards Row */}
-      <div className="kpi-row-3col" style={{ marginBottom: '8px' }}>
+      <div className="kpi-row" style={{ marginBottom: '8px' }}>
         {/* Card 1: TOTAL PENDIENTES */}
         <div
           className={`kpi-card ${filterTupa === -1 ? 'active' : ''}`}
@@ -455,7 +465,51 @@ export const InternoDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Card 2: PENDIENTES NO TUPA */}
+        {/* Card 2: CUTS ÚNICOS */}
+        <div
+          className="kpi-card purple"
+          style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '84px', cursor: 'default' }}
+        >
+          <div className="kpi-title-row">
+            <span className="kpi-title" style={{ color: 'var(--purple-accent)' }}>
+              CUTS ÚNICOS
+            </span>
+            <span className="kpi-dots">•••</span>
+          </div>
+          <div className="kpi-value-row">
+            <div className="kpi-value">{formatNum(metrics.uniqueCuts)}</div>
+            <span className="kpi-badge purple">
+              {metrics.total > 0 ? ((metrics.uniqueCuts / metrics.total) * 100).toFixed(1) : '0.0'}%
+            </span>
+          </div>
+          <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '4px' }}>
+            Expedientes principales independientes
+          </div>
+        </div>
+
+        {/* Card 3: DUPLICADOS (COPIAS) */}
+        <div
+          className="kpi-card red"
+          style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '84px', cursor: 'default' }}
+        >
+          <div className="kpi-title-row">
+            <span className="kpi-title" style={{ color: 'var(--danger)' }}>
+              DUPLICADOS (COPIAS)
+            </span>
+            <span className="kpi-dots">•••</span>
+          </div>
+          <div className="kpi-value-row">
+            <div className="kpi-value">{formatNum(metrics.duplicates)}</div>
+            <span className="kpi-badge red">
+              {metrics.total > 0 ? ((metrics.duplicates / metrics.total) * 100).toFixed(1) : '0.0'}%
+            </span>
+          </div>
+          <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '4px' }}>
+            Derivaciones y copias en otras bandejas
+          </div>
+        </div>
+
+        {/* Card 4: PENDIENTES NO TUPA */}
         <div
           className={`kpi-card green ${filterTupa === 1 ? 'active' : ''}`}
           style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '84px' }}
@@ -470,7 +524,7 @@ export const InternoDashboard: React.FC = () => {
           <div className="kpi-value-row">
             <div className="kpi-value">{formatNum(metrics.noTupa)}</div>
             <span className="kpi-badge green">
-              {metrics.total > 0 ? ((metrics.noTupa / metrics.total) * 100).toFixed(1) : '86.0'}%
+              {metrics.total > 0 ? ((metrics.noTupa / metrics.total) * 100).toFixed(1) : '0.0'}%
             </span>
           </div>
           <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '4px' }}>
@@ -478,7 +532,7 @@ export const InternoDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Card 3: PENDIENTES TUPA */}
+        {/* Card 5: PENDIENTES TUPA */}
         <div
           className={`kpi-card orange ${filterTupa === 0 ? 'active' : ''}`}
           style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '84px' }}
@@ -493,7 +547,7 @@ export const InternoDashboard: React.FC = () => {
           <div className="kpi-value-row">
             <div className="kpi-value">{formatNum(metrics.tupa)}</div>
             <span className="kpi-badge orange">
-              {metrics.total > 0 ? ((metrics.tupa / metrics.total) * 100).toFixed(1) : '14.0'}%
+              {metrics.total > 0 ? ((metrics.tupa / metrics.total) * 100).toFixed(1) : '0.0'}%
             </span>
           </div>
           <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '4px' }}>
@@ -726,10 +780,10 @@ export const InternoDashboard: React.FC = () => {
                                 x={xPosCenter}
                                 y={chartBottomY + 32}
                                 fill="var(--text-secondary)"
-                                fontSize="10"
+                                fontSize="9"
                                 fontWeight="600"
                                 textAnchor="end"
-                                transform={`rotate(-40, ${xPosCenter}, ${chartBottomY + 32})`}
+                                transform={`rotate(-30, ${xPosCenter}, ${chartBottomY + 32})`}
                               >
                                 {shortName}
                               </text>
