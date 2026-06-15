@@ -1,6 +1,7 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 
 import { InternoFiltersBar } from './InternoFiltersBar';
+import { copyElementToClipboard } from '../utils/exportChart';
 
 // Interfaces for structured data — 4-level hierarchy:
 // SEDE (national) → GRUPO (AAA) → ULTIMO SEDE (office) → ULTIMO ESCRITORIO (person)
@@ -52,6 +53,37 @@ interface DashboardData {
 }
 
 export const InternoDashboard: React.FC = () => {
+  // Refs for each chart card to copy them as images
+  const chart1Ref = useRef<HTMLDivElement>(null);
+  const chart2Ref = useRef<HTMLDivElement>(null);
+  const chart3Ref = useRef<HTMLDivElement>(null);
+  const chart4Ref = useRef<HTMLDivElement>(null);
+  const chart5Ref = useRef<HTMLDivElement>(null);
+  const chart6Ref = useRef<HTMLDivElement>(null);
+
+  // States for clipboard feedback
+  const [copiedChart1, setCopiedChart1] = useState(false);
+  const [copiedChart2, setCopiedChart2] = useState(false);
+  const [copiedChart3, setCopiedChart3] = useState(false);
+  const [copiedChart4, setCopiedChart4] = useState(false);
+  const [copiedChart5, setCopiedChart5] = useState(false);
+  const [copiedChart6, setCopiedChart6] = useState(false);
+
+  // Export States
+  const [detailedData, setDetailedData] = useState<any>(null);
+  const [exportLoading, setExportLoading] = useState(false);
+
+  const handleExportChart = (ref: React.RefObject<HTMLDivElement | null>, setCopied: (v: boolean) => void) => {
+    if (ref.current) {
+      copyElementToClipboard(ref.current)
+        .then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        })
+        .catch((err) => console.error('Clipboard copy failed:', err));
+    }
+  };
+
   // New Filters State
   const [filterSede, setFilterSede] = useState<number>(-1);
   const [filterGrupo, setFilterGrupo] = useState<number>(-1);
@@ -149,6 +181,94 @@ export const InternoDashboard: React.FC = () => {
     setFilterProcedimiento(-1);
     setFilterStartDate(minDate);
     setFilterEndDate(maxDate);
+  };
+
+  const performDetailedExport = (detailed: any) => {
+    if (!data) return;
+    const lines: string[] = [];
+    
+    // Add original headers
+    lines.push(detailed.columns.join(';'));
+
+    const lookupCols = [
+      'ORIGEN', 'TIPO', 'TUPA', 'PROCEDIMIENTO', 'AÑO', 'TIPO DOCUMENTO', 
+      'OFICINA ENVIA', 'ULTIMO ESCRITORIO', 'ULTIMO SEDE', 'OFICINA PADRE', 
+      'GRUPO', 'SEDE', 'TAREA'
+    ];
+
+    const esc = (s: any) => {
+      const str = String(s ?? '');
+      return `"${str.replace(/"/g, '""')}"`;
+    };
+
+    for (let i = 0; i < data.records.length; i++) {
+      const rec = data.records[i];
+      const [gIdx, usIdx, _ueIdx, tupaCode, procIdx, _creationYear, _ingresoYear, bandejaIdx, dateIdx, origenCode] = rec;
+
+      // Apply Filters
+      if (filterSede === 0) continue;
+      if (filterGrupo !== -1 && gIdx !== filterGrupo) continue;
+      if (filterOficina !== -1 && usIdx !== filterOficina) continue;
+      if (filterTupa !== -1 && tupaCode !== filterTupa) continue;
+      if (filterBandeja !== -1 && bandejaIdx !== filterBandeja) continue;
+      if (filterProcedimiento !== -1 && procIdx !== filterProcedimiento) continue;
+      if (filterOrigen !== -1 && origenCode !== filterOrigen) continue;
+      if (filterStartDate && filterEndDate) {
+        const dStr = data.metadata.dates[dateIdx];
+        if (dStr < filterStartDate || dStr > filterEndDate) continue;
+      }
+
+      const detailedRec = detailed.records[i];
+      const csvRow = detailed.columns.map((col: string, colIdx: number) => {
+        const val = detailedRec[colIdx];
+        if (lookupCols.includes(col)) {
+          const lookupList = detailed.lookups[col] || [];
+          return esc(lookupList[val] || '');
+        } else {
+          return esc(val);
+        }
+      });
+
+      lines.push(csvRow.join(';'));
+    }
+
+    const csvContent = '\uFEFF' + lines.join('\n');
+
+    // Download trigger
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `SISGED_Interno_Detalle_Filtrado_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleExportCSV = () => {
+    if (!data) return;
+
+    if (!detailedData) {
+      setExportLoading(true);
+      fetch(`${import.meta.env.BASE_URL}data/interno_detailed_data.json`)
+        .then((res) => {
+          if (!res.ok) throw new Error('No se pudo cargar el archivo detallado.');
+          return res.json();
+        })
+        .then((jsonDetailed: any) => {
+          setDetailedData(jsonDetailed);
+          setExportLoading(false);
+          performDetailedExport(jsonDetailed);
+        })
+        .catch((err) => {
+          console.error(err);
+          alert('Error al descargar la información detallada de los expedientes internos.');
+          setExportLoading(false);
+        });
+    } else {
+      performDetailedExport(detailedData);
+    }
   };
 
   // Dynamically aggregate raw records to match the GrupoRecord[] hierarchy
@@ -561,12 +681,47 @@ export const InternoDashboard: React.FC = () => {
       <div className="interno-grid-row1">
 
         {/* Card 1: Horizontal Bar Chart (Total by Grupo) */}
-        <div className="chart-card" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column' }}>
+        <div ref={chart1Ref} className="chart-card" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column' }}>
           <div className="chart-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div className="chart-card-title-box">
               <h3>DISTRIBUCIÓN POR ÁMBITO (AAA)</h3>
               <p>Clasificación de expedientes por dependencia territorial.</p>
             </div>
+            <button
+              onClick={() => handleExportChart(chart1Ref, setCopiedChart1)}
+              title={copiedChart1 ? "¡Copiado!" : "Exportar Gráfico (Copiar)"}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: copiedChart1 ? 'var(--success)' : 'rgba(255, 255, 255, 0.4)',
+                cursor: 'pointer',
+                padding: '6px',
+                borderRadius: '4px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = copiedChart1 ? 'var(--success)' : '#ffffff';
+                e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = copiedChart1 ? 'var(--success)' : 'rgba(255, 255, 255, 0.4)';
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }}
+            >
+              {copiedChart1 ? (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              ) : (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                  <circle cx="12" cy="13" r="4"></circle>
+                </svg>
+              )}
+            </button>
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px', marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -599,21 +754,58 @@ export const InternoDashboard: React.FC = () => {
         </div>
 
         {/* Card 2: Hierarchical Vertical Drilldown Chart */}
-        <div className="chart-card" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column' }}>
+        <div ref={chart2Ref} className="chart-card" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column' }}>
           <div className="chart-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div className="chart-card-title-box">
               <h3>Desglose Estructural Interactivo</h3>
               <p>Navega la jerarquía de expedientes (Sede → Ámbito → Oficina → Profesional). Haz clic en una columna para profundizar.</p>
             </div>
-            <div style={{ display: 'flex', gap: '12px', fontSize: '10px', fontWeight: '700' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ width: '10px', height: '10px', background: 'linear-gradient(180deg, #00dfd8, #007cf0)', borderRadius: '50%', boxShadow: '0 0 6px rgba(0,223,216,0.4)' }}></span>
-                <span>NO TUPA</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <div style={{ display: 'flex', gap: '12px', fontSize: '10px', fontWeight: '700' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ width: '10px', height: '10px', background: 'linear-gradient(180deg, #00dfd8, #007cf0)', borderRadius: '50%', boxShadow: '0 0 6px rgba(0,223,216,0.4)' }}></span>
+                  <span>NO TUPA</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ width: '10px', height: '10px', background: 'linear-gradient(180deg, #ff0080, #7928ca)', borderRadius: '50%', boxShadow: '0 0 6px rgba(255,0,128,0.4)' }}></span>
+                  <span>TUPA</span>
+                </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ width: '10px', height: '10px', background: 'linear-gradient(180deg, #ff0080, #7928ca)', borderRadius: '50%', boxShadow: '0 0 6px rgba(255,0,128,0.4)' }}></span>
-                <span>TUPA</span>
-              </div>
+              <button
+                onClick={() => handleExportChart(chart2Ref, setCopiedChart2)}
+                title={copiedChart2 ? "¡Copiado!" : "Exportar Gráfico (Copiar)"}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: copiedChart2 ? 'var(--success)' : 'rgba(255, 255, 255, 0.4)',
+                  cursor: 'pointer',
+                  padding: '6px',
+                  borderRadius: '4px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = copiedChart2 ? 'var(--success)' : '#ffffff';
+                  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = copiedChart2 ? 'var(--success)' : 'rgba(255, 255, 255, 0.4)';
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }}
+              >
+                {copiedChart2 ? (
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                ) : (
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                    <circle cx="12" cy="13" r="4"></circle>
+                  </svg>
+                )}
+              </button>
             </div>
           </div>
 
@@ -805,11 +997,46 @@ export const InternoDashboard: React.FC = () => {
       <div className="interno-grid-row2">
 
         {/* Widget 1: ANTIGÜEDAD DE PENDIENTES */}
-        <div className="chart-card" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', height: '100%' }}>
-          <div className="chart-card-header">
+        <div ref={chart3Ref} className="chart-card" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', height: '100%' }}>
+          <div className="chart-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div className="chart-card-title-box">
               <h3 style={{ fontSize: '11px', fontWeight: '800', letterSpacing: '0.4px', textTransform: 'uppercase' }}>ANTIGÜEDAD DE PENDIENTES (FECHA DE CREACIÓN)</h3>
             </div>
+            <button
+              onClick={() => handleExportChart(chart3Ref, setCopiedChart3)}
+              title={copiedChart3 ? "¡Copiado!" : "Exportar Gráfico (Copiar)"}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: copiedChart3 ? 'var(--success)' : 'rgba(255, 255, 255, 0.4)',
+                cursor: 'pointer',
+                padding: '6px',
+                borderRadius: '4px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = copiedChart3 ? 'var(--success)' : '#ffffff';
+                e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = copiedChart3 ? 'var(--success)' : 'rgba(255, 255, 255, 0.4)';
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }}
+            >
+              {copiedChart3 ? (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              ) : (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                  <circle cx="12" cy="13" r="4"></circle>
+                </svg>
+              )}
+            </button>
           </div>
 
           <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', height: '230px', marginTop: '16px', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '6px' }}>
@@ -848,11 +1075,46 @@ export const InternoDashboard: React.FC = () => {
         </div>
 
         {/* Widget 2: AÑO DE INGRESO ULTIMO ESCRITORIO */}
-        <div className="chart-card" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', height: '100%' }}>
-          <div className="chart-card-header">
+        <div ref={chart4Ref} className="chart-card" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', height: '100%' }}>
+          <div className="chart-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div className="chart-card-title-box">
               <h3 style={{ fontSize: '11px', fontWeight: '800', letterSpacing: '0.4px', textTransform: 'uppercase' }}>AÑO DE INGRESO ULTIMO ESCRITORIO</h3>
             </div>
+            <button
+              onClick={() => handleExportChart(chart4Ref, setCopiedChart4)}
+              title={copiedChart4 ? "¡Copiado!" : "Exportar Gráfico (Copiar)"}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: copiedChart4 ? 'var(--success)' : 'rgba(255, 255, 255, 0.4)',
+                cursor: 'pointer',
+                padding: '6px',
+                borderRadius: '4px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = copiedChart4 ? 'var(--success)' : '#ffffff';
+                e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = copiedChart4 ? 'var(--success)' : 'rgba(255, 255, 255, 0.4)';
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }}
+            >
+              {copiedChart4 ? (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              ) : (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                  <circle cx="12" cy="13" r="4"></circle>
+                </svg>
+              )}
+            </button>
           </div>
 
           <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', height: '230px', marginTop: '16px', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '6px' }}>
@@ -891,11 +1153,46 @@ export const InternoDashboard: React.FC = () => {
         </div>
 
         {/* Widget 4: POR BANDEJAS */}
-        <div className="chart-card" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', height: '100%' }}>
-          <div className="chart-card-header">
+        <div ref={chart5Ref} className="chart-card" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', height: '100%' }}>
+          <div className="chart-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div className="chart-card-title-box">
               <h3 style={{ fontSize: '11px', fontWeight: '800', letterSpacing: '0.4px', textTransform: 'uppercase' }}>POR BANDEJAS</h3>
             </div>
+            <button
+              onClick={() => handleExportChart(chart5Ref, setCopiedChart5)}
+              title={copiedChart5 ? "¡Copiado!" : "Exportar Gráfico (Copiar)"}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: copiedChart5 ? 'var(--success)' : 'rgba(255, 255, 255, 0.4)',
+                cursor: 'pointer',
+                padding: '6px',
+                borderRadius: '4px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = copiedChart5 ? 'var(--success)' : '#ffffff';
+                e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = copiedChart5 ? 'var(--success)' : 'rgba(255, 255, 255, 0.4)';
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }}
+            >
+              {copiedChart5 ? (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              ) : (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                  <circle cx="12" cy="13" r="4"></circle>
+                </svg>
+              )}
+            </button>
           </div>
 
           <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', height: '230px', marginTop: '16px', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '6px', gap: '8px' }}>
@@ -943,21 +1240,58 @@ export const InternoDashboard: React.FC = () => {
 
 
       {/* 6. Row 3: Vertical Bar Chart for Procedures */}
-      <div className="chart-card" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column' }}>
+      <div ref={chart6Ref} className="chart-card" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column' }}>
         <div className="chart-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div className="chart-card-title-box">
             <h3>PROCEDIMIENTOS (TUPA / NO TUPA)</h3>
             <p>Clasificación de expedientes por tipo de trámite. (Mostrando Top 30)</p>
           </div>
-          <div style={{ display: 'flex', gap: '12px', fontSize: '10px', fontWeight: '700' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ width: '10px', height: '10px', background: 'linear-gradient(180deg, #00dfd8, #007cf0)', borderRadius: '50%' }}></span>
-              <span>NO TUPA</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <div style={{ display: 'flex', gap: '12px', fontSize: '10px', fontWeight: '700' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ width: '10px', height: '10px', background: 'linear-gradient(180deg, #00dfd8, #007cf0)', borderRadius: '50%' }}></span>
+                <span>NO TUPA</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ width: '10px', height: '10px', background: 'linear-gradient(180deg, #f59e0b, #ea580c)', borderRadius: '50%' }}></span>
+                <span>TUPA</span>
+              </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ width: '10px', height: '10px', background: 'linear-gradient(180deg, #f59e0b, #ea580c)', borderRadius: '50%' }}></span>
-              <span>TUPA</span>
-            </div>
+            <button
+              onClick={() => handleExportChart(chart6Ref, setCopiedChart6)}
+              title={copiedChart6 ? "¡Copiado!" : "Exportar Gráfico (Copiar)"}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: copiedChart6 ? 'var(--success)' : 'rgba(255, 255, 255, 0.4)',
+                cursor: 'pointer',
+                padding: '6px',
+                borderRadius: '4px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = copiedChart6 ? 'var(--success)' : '#ffffff';
+                e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = copiedChart6 ? 'var(--success)' : 'rgba(255, 255, 255, 0.4)';
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }}
+            >
+              {copiedChart6 ? (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              ) : (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                  <circle cx="12" cy="13" r="4"></circle>
+                </svg>
+              )}
+            </button>
           </div>
         </div>
 
@@ -1031,6 +1365,22 @@ export const InternoDashboard: React.FC = () => {
         </div>
       </div>
 
+      {/* Hidden button for triggering detailed export from App.tsx */}
+      <button 
+        id="export-interno-btn" 
+        style={{ display: 'none' }} 
+        onClick={handleExportCSV} 
+        disabled={exportLoading}
+      />
+
+      {/* Loading overlay for export preparation */}
+      {exportLoading && (
+        <div className="loading-overlay" style={{ position: 'fixed', zIndex: 9999 }}>
+          <div className="spinner"></div>
+          <div className="loading-text">Preparando archivo de exportación detallado...</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Procesando {formatNum(metrics.total)} registros filtrados</div>
+        </div>
+      )}
     </div>
   );
 };
