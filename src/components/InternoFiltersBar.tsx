@@ -5,10 +5,15 @@ interface InternoFiltersBarProps {
   sede: number;
   onSedeChange: (val: number) => void;
   
-  // Ambito (Grupo)
+  // Ambito (Grupo) / Oficina Padre
   grupo: number;
   onGrupoChange: (val: number) => void;
-  gruposList: string[];
+  gruposList: { name: string; idx: number }[];
+
+  // Organo (solo para Sede Central)
+  organo: number;
+  onOrganoChange: (val: number) => void;
+  organosList: { name: string; idx: number }[];
 
   // Oficina (Ultimo Sede)
   oficina: number;
@@ -42,18 +47,24 @@ interface InternoFiltersBarProps {
   onProcedimientoChange: (val: number) => void;
   procedimientosList: string[];
 
+  // Semáforo
+  semaforo: string;
+  onSemaforoChange: (val: string) => void;
+
   onClearFilters: () => void;
 }
 
 export const InternoFiltersBar: React.FC<InternoFiltersBarProps> = ({
   sede, onSedeChange,
   grupo, onGrupoChange, gruposList,
+  organo, onOrganoChange, organosList,
   oficina, onOficinaChange, oficinasList, allowedOficinas,
   startDate, endDate, minDate, maxDate, onStartDateChange, onEndDateChange,
   origen, onOrigenChange,
   bandeja, onBandejaChange, bandejasList,
   tupa, onTupaChange,
   procedimiento, onProcedimientoChange, procedimientosList,
+  semaforo, onSemaforoChange,
   onClearFilters
 }) => {
   // --- Grupo Combobox ---
@@ -73,7 +84,7 @@ export const InternoFiltersBar: React.FC<InternoFiltersBarProps> = ({
 
   // Sync inputs
   useEffect(() => {
-    setGrupoQuery(grupo === -1 ? '' : (gruposList[grupo] || ''));
+    setGrupoQuery(grupo === -1 ? '' : (gruposList.find(g => g.idx === grupo)?.name || ''));
   }, [grupo, gruposList]);
 
   useEffect(() => {
@@ -89,7 +100,7 @@ export const InternoFiltersBar: React.FC<InternoFiltersBarProps> = ({
     const handleClickOutside = (e: MouseEvent) => {
       if (grupoDropdownRef.current && !grupoDropdownRef.current.contains(e.target as Node)) {
         setIsGrupoOpen(false);
-        setGrupoQuery(grupo === -1 ? '' : (gruposList[grupo] || ''));
+        setGrupoQuery(grupo === -1 ? '' : (gruposList.find(g => g.idx === grupo)?.name || ''));
       }
       if (oficinaDropdownRef.current && !oficinaDropdownRef.current.contains(e.target as Node)) {
         setIsOficinaOpen(false);
@@ -106,10 +117,11 @@ export const InternoFiltersBar: React.FC<InternoFiltersBarProps> = ({
 
   // Options filtering
   const filteredGrupos = [
-    { name: 'Todos los ámbitos', idx: -1 },
-    ...gruposList.map((name, idx) => ({ name, idx }))
+    { name: sede === 0 ? 'Todas las oficinas padre' : 'Todos los ámbitos', idx: -1 },
+    ...gruposList
   ].filter(item => {
-    if (grupoQuery === (grupo === -1 ? '' : gruposList[grupo]) || !grupoQuery) return true;
+    const currentName = grupo === -1 ? '' : (gruposList.find(g => g.idx === grupo)?.name || '');
+    if (grupoQuery === currentName || !grupoQuery) return true;
     return item.name.toLowerCase().includes(grupoQuery.toLowerCase());
   });
 
@@ -147,32 +159,48 @@ export const InternoFiltersBar: React.FC<InternoFiltersBarProps> = ({
         </select>
       </div>
 
+      {/* 1.5. Órgano (Dropdown normal, solo si Sede Central) */}
+      {sede === 0 && (
+        <div className="inline-filter-item">
+          <span className="inline-filter-label">Órgano</span>
+          <select
+            className="inline-filter-select"
+            value={organo}
+            onChange={(e) => onOrganoChange(Number(e.target.value))}
+            style={{ width: '180px' }}
+          >
+            <option value={-1}>Todos los órganos</option>
+            {organosList.map((org) => (
+              <option key={org.idx} value={org.idx}>
+                {org.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {/* 2. Ámbito / Grupo (Combobox) */}
       <div className="inline-filter-item">
-        <span className="inline-filter-label">Ámbito</span>
+        <span className="inline-filter-label">{sede === 0 ? 'Oficina Padre' : 'Ámbito'}</span>
         <div className="combobox-container" ref={grupoDropdownRef}>
           <div 
             className="combobox-input-wrapper" 
-            onClick={() => {
-              if (sede === 0) return; // Disallow Grupo if Sede Central
-              setIsGrupoOpen(!isGrupoOpen);
-            }}
-            style={{ opacity: sede === 0 ? 0.5 : 1, cursor: sede === 0 ? 'not-allowed' : 'pointer' }}
+            onClick={() => setIsGrupoOpen(!isGrupoOpen)}
+            style={{ cursor: 'pointer' }}
           >
             <input
               type="text" className="combobox-input"
-              value={sede === 0 ? 'No aplica' : grupoQuery}
-              onChange={(e) => { if (sede !== 0) { setGrupoQuery(e.target.value); setIsGrupoOpen(true); } }}
-              disabled={sede === 0}
-              placeholder="Todos los ámbitos"
-              style={{ width: '160px', cursor: sede === 0 ? 'not-allowed' : 'text' }}
+              value={grupoQuery}
+              onChange={(e) => { setGrupoQuery(e.target.value); setIsGrupoOpen(true); }}
+              placeholder={sede === 0 ? 'Todas las oficinas padre' : 'Todos los ámbitos'}
+              style={{ width: '160px', cursor: 'text' }}
             />
             <span className={`combobox-chevron ${isGrupoOpen ? 'open' : ''}`}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
             </span>
           </div>
 
-          {isGrupoOpen && sede !== 0 && (
+          {isGrupoOpen && (
             <div className="combobox-dropdown" style={{ width: '220px' }}>
               {filteredGrupos.map((item) => (
                 <div
@@ -190,7 +218,7 @@ export const InternoFiltersBar: React.FC<InternoFiltersBarProps> = ({
 
       {/* 3. Oficina / Ultimo Sede (Combobox) */}
       <div className="inline-filter-item">
-        <span className="inline-filter-label">Oficina</span>
+        <span className="inline-filter-label">{sede === 0 ? 'Oficina (Área)' : 'Oficina'}</span>
         <div className="combobox-container" ref={oficinaDropdownRef}>
           <div 
             className="combobox-input-wrapper" 
@@ -300,6 +328,24 @@ export const InternoFiltersBar: React.FC<InternoFiltersBarProps> = ({
             </div>
           )}
         </div>
+      </div>
+
+      {/* 9. Semáforo */}
+      <div className="inline-filter-item">
+        <span className="inline-filter-label">Semáforo</span>
+        <select 
+          className="inline-filter-select" 
+          value={semaforo} 
+          onChange={(e) => onSemaforoChange(e.target.value)}
+          style={{ width: '130px' }}
+        >
+          <option value="TODOS">Todos</option>
+          <option value="VERDE">A Tiempo (Verde)</option>
+          <option value="AMARILLO">En el Límite (Amarillo)</option>
+          <option value="ANARANJADO">Días Finales (Anaranjado)</option>
+          <option value="ROJO">Fuera de Plazo (Rojo)</option>
+          <option value="SIN_PLAZO">Sin Plazo</option>
+        </select>
       </div>
 
       {/* Clear Button */}

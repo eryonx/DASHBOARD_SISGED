@@ -1606,4 +1606,34 @@ body {
   scrollbar-color: rgba(56, 189, 248, 0.2) rgba(255, 255, 255, 0.02);
 }
 
+/* Fila 3: Procedimientos (Ancho Completo) */
+.interno-grid-row3 {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+  align-items: stretch;
+}
+
+/* Selector de Vista (TUPA / PLAZOS) */
+.view-mode-toggle button {
+  background: transparent;
+  color: var(--text-secondary);
+  border: none;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: all var(--transition-fast) ease-in-out;
+}
+
+.view-mode-toggle button:hover {
+  color: var(--text-primary);
+}
+
+.view-mode-toggle button.active {
+  background-color: var(--primary) !important;
+  color: #060913 !important;
+  box-shadow: 0 2px 8px rgba(56, 189, 248, 0.3);
+}
+
+
+
 

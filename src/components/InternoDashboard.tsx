@@ -25,32 +25,103 @@ interface GrupoRecord {
 
 interface Metadata {
   grupos: string[];
+  grupo_oficinas: string[];
   ultimo_sedes: string[];
   ultimo_escritorios: string[];
   bandejas: string[];
   procedimientos: string[];
   dates: string[];
   cuts?: string[];
+  plazos: string[];
 }
 
 type InternoRecordTuple = [
-  number, // 0: grupo_idx
-  number, // 1: ultimo_sede_idx
-  number, // 2: ultimo_escritorio_idx
-  number, // 3: tupa_code (0=TUPA, 1=NO TUPA)
-  number, // 4: proc_idx
-  number, // 5: creation_year
-  number, // 6: ingreso_year
-  number, // 7: bandeja_idx
-  number, // 8: date_idx
-  number, // 9: origen_code (0=Interno, 1=Externo)
-  number  // 10: cut_idx
+  number, // 0: sede_code (0=SC, 1=OD)
+  number, // 1: organo_idx
+  number, // 2: grupo_oficinar_idx
+  number, // 3: ultimo_sede_idx
+  number, // 4: ultimo_escritorio_idx
+  number, // 5: tupa_code (0=TUPA, 1=NO TUPA)
+  number, // 6: proc_idx
+  number, // 7: creation_year
+  number, // 8: ingreso_year
+  number, // 9: bandeja_idx
+  number, // 10: date_idx
+  number, // 11: origen_code (0=Interno, 1=Externo)
+  number, // 12: cut_idx
+  number, // 13: plazo_idx
+  number  // 14: dias_transcurridos
 ];
 
 interface DashboardData {
   metadata: Metadata;
   records: InternoRecordTuple[];
 }
+
+// Helper to determine traffic light color of a record
+const getSemaforoColor = (diasTranscurridos: number, plazoStr: string): 'VERDE' | 'AMARILLO' | 'ANARANJADO' | 'ROJO' | 'SIN_PLAZO' => {
+  if (!plazoStr || plazoStr === '-' || plazoStr === '#N/D') {
+    return 'SIN_PLAZO';
+  }
+  const P = parseInt(plazoStr, 10);
+  if (isNaN(P)) return 'SIN_PLAZO';
+  
+  if (diasTranscurridos <= 0) return 'VERDE';
+  if (diasTranscurridos > P) return 'ROJO';
+
+  // Specific overrides from the official table
+  if (P === 1) return 'VERDE';
+  if (P === 2) {
+    if (diasTranscurridos === 1) return 'VERDE';
+    if (diasTranscurridos === 2) return 'ANARANJADO';
+  }
+  if (P === 3) {
+    if (diasTranscurridos === 1) return 'VERDE';
+    if (diasTranscurridos === 2) return 'AMARILLO';
+    if (diasTranscurridos === 3) return 'ANARANJADO';
+  }
+  if (P === 5) {
+    if (diasTranscurridos <= 2) return 'VERDE';
+    if (diasTranscurridos <= 4) return 'AMARILLO';
+    return 'ANARANJADO';
+  }
+  if (P === 7) {
+    if (diasTranscurridos <= 3) return 'VERDE';
+    if (diasTranscurridos <= 5) return 'AMARILLO';
+    return 'ANARANJADO';
+  }
+  if (P === 10) {
+    if (diasTranscurridos <= 4) return 'VERDE';
+    if (diasTranscurridos <= 7) return 'AMARILLO';
+    return 'ANARANJADO';
+  }
+  if (P === 12) {
+    if (diasTranscurridos <= 5) return 'VERDE';
+    if (diasTranscurridos <= 8) return 'AMARILLO';
+    return 'ANARANJADO';
+  }
+  if (P === 15) {
+    if (diasTranscurridos <= 6) return 'VERDE';
+    if (diasTranscurridos <= 9) return 'AMARILLO';
+    return 'ANARANJADO';
+  }
+  if (P === 20) {
+    if (diasTranscurridos <= 8) return 'VERDE';
+    if (diasTranscurridos <= 14) return 'AMARILLO';
+    return 'ANARANJADO';
+  }
+  if (P === 30) {
+    if (diasTranscurridos <= 12) return 'VERDE';
+    if (diasTranscurridos <= 21) return 'AMARILLO';
+    return 'ANARANJADO';
+  }
+
+  // Fallback based on standard percentages
+  const pct = (diasTranscurridos / P) * 100;
+  if (pct <= 40) return 'VERDE';
+  if (pct <= 70) return 'AMARILLO';
+  return 'ANARANJADO';
+};
 
 export const InternoDashboard: React.FC = () => {
   // Refs for each chart card to copy them as images
@@ -87,6 +158,7 @@ export const InternoDashboard: React.FC = () => {
   // New Filters State
   const [filterSede, setFilterSede] = useState<number>(-1);
   const [filterGrupo, setFilterGrupo] = useState<number>(-1);
+  const [filterOrgano, setFilterOrgano] = useState<number>(-1);
   const [filterOficina, setFilterOficina] = useState<number>(-1);
   const [filterStartDate, setFilterStartDate] = useState<string>('');
   const [filterEndDate, setFilterEndDate] = useState<string>('');
@@ -94,8 +166,19 @@ export const InternoDashboard: React.FC = () => {
   const [filterTupa, setFilterTupa] = useState<number>(-1);
   const [filterBandeja, setFilterBandeja] = useState<number>(-1);
   const [filterProcedimiento, setFilterProcedimiento] = useState<number>(-1);
+  const [filterSemaforo, setFilterSemaforo] = useState<string>('TODOS');
+  const [structViewMode, setStructViewMode] = useState<'TUPA' | 'PLAZOS'>('TUPA');
+  const [structSemaforoFilter, setStructSemaforoFilter] = useState<string[]>([]);
+  const [showPlazosInfo, setShowPlazosInfo] = useState(false);
 
-  // ResizeObserver for Drilldown Chart
+  const isSemaforoFiltered = (rec: InternoRecordTuple) => {
+    if (filterSemaforo === 'TODOS') return false;
+    const plazoVal = data?.metadata.plazos[rec[13]] || '-';
+    const semaforoColor = getSemaforoColor(rec[14], plazoVal);
+    return semaforoColor !== filterSemaforo;
+  };
+
+  // ResizeObserver for Drilldown Chart 2
   const svgContainerRef = React.useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState<number>(800);
   const [containerHeight, setContainerHeight] = useState<number>(350);
@@ -142,19 +225,40 @@ export const InternoDashboard: React.FC = () => {
   // Compute allowed Oficinas (Ultimo Sedes) based on selected Grupo
   const allowedOficinas = useMemo(() => {
     if (!data) return [];
-    if (filterGrupo === -1) return [];
     const set = new Set<number>();
-    for (let i = 0; i < data.records.length; i++) {
-      if (data.records[i][0] === filterGrupo) {
-        set.add(data.records[i][1]);
+    
+    if (filterSede === 0) {
+      // Sede Central: allow all offices in SC records matching organ/parent-office filters
+      for (let i = 0; i < data.records.length; i++) {
+        if (data.records[i][0] === 0) {
+          if (filterOrgano !== -1 && data.records[i][1] !== filterOrgano) continue;
+          if (filterGrupo !== -1 && data.records[i][2] !== filterGrupo) continue;
+          set.add(data.records[i][3]);
+        }
+      }
+    } else {
+      // OD or Todas (Grupo applies to OD)
+      if (filterGrupo === -1) {
+        for (let i = 0; i < data.records.length; i++) {
+          if (data.records[i][0] === 1) {
+            set.add(data.records[i][3]);
+          }
+        }
+      } else {
+        for (let i = 0; i < data.records.length; i++) {
+          if (data.records[i][0] === 1 && data.records[i][2] === filterGrupo) {
+            set.add(data.records[i][3]);
+          }
+        }
       }
     }
+
     return Array.from(set).sort((a, b) => {
       const nameA = data.metadata.ultimo_sedes[a] || '';
       const nameB = data.metadata.ultimo_sedes[b] || '';
       return nameA.localeCompare(nameB);
     });
-  }, [data, filterGrupo]);
+  }, [data, filterSede, filterOrgano, filterGrupo]);
 
   // Handle dates setup
   const { minDate, maxDate } = useMemo(() => {
@@ -174,11 +278,13 @@ export const InternoDashboard: React.FC = () => {
   const handleClearFilters = () => {
     setFilterSede(-1);
     setFilterGrupo(-1);
+    setFilterOrgano(-1);
     setFilterOficina(-1);
     setFilterOrigen(-1);
     setFilterTupa(-1);
     setFilterBandeja(-1);
     setFilterProcedimiento(-1);
+    setFilterSemaforo('TODOS');
     setFilterStartDate(minDate);
     setFilterEndDate(maxDate);
   };
@@ -193,7 +299,7 @@ export const InternoDashboard: React.FC = () => {
     const lookupCols = [
       'ORIGEN', 'TIPO', 'TUPA', 'PROCEDIMIENTO', 'AÑO', 'TIPO DOCUMENTO', 
       'OFICINA ENVIA', 'ULTIMO ESCRITORIO', 'ULTIMO SEDE', 'OFICINA PADRE', 
-      'GRUPO', 'SEDE', 'TAREA'
+      'GRUPO', 'SEDE', 'TAREA', 'PLAZO'
     ];
 
     const esc = (s: any) => {
@@ -203,11 +309,29 @@ export const InternoDashboard: React.FC = () => {
 
     for (let i = 0; i < data.records.length; i++) {
       const rec = data.records[i];
-      const [gIdx, usIdx, _ueIdx, tupaCode, procIdx, _creationYear, _ingresoYear, bandejaIdx, dateIdx, origenCode] = rec;
+      const [
+        sedeCode,
+        organoIdxVal,
+        goIdx,
+        usIdx,
+        _ueIdx,
+        tupaCode,
+        procIdx,
+        _creationYear,
+        _ingresoYear,
+        bandejaIdx,
+        dateIdx,
+        origenCode,
+        _cutIdx,
+        _plazoIdx,
+        diasTranscurridos
+      ] = rec;
 
       // Apply Filters
-      if (filterSede === 0) continue;
-      if (filterGrupo !== -1 && gIdx !== filterGrupo) continue;
+      if (filterSede === 0 && sedeCode !== 0) continue;
+      if (filterSede === 1 && sedeCode !== 1) continue;
+      if (filterOrgano !== -1 && organoIdxVal !== filterOrgano) continue;
+      if (filterGrupo !== -1 && goIdx !== filterGrupo) continue;
       if (filterOficina !== -1 && usIdx !== filterOficina) continue;
       if (filterTupa !== -1 && tupaCode !== filterTupa) continue;
       if (filterBandeja !== -1 && bandejaIdx !== filterBandeja) continue;
@@ -216,6 +340,11 @@ export const InternoDashboard: React.FC = () => {
       if (filterStartDate && filterEndDate) {
         const dStr = data.metadata.dates[dateIdx];
         if (dStr < filterStartDate || dStr > filterEndDate) continue;
+      }
+      if (filterSemaforo !== 'TODOS') {
+        const plazoVal = data.metadata.plazos[_plazoIdx];
+        const semaforoColor = getSemaforoColor(diasTranscurridos, plazoVal);
+        if (semaforoColor !== filterSemaforo) continue;
       }
 
       const detailedRec = detailed.records[i];
@@ -276,7 +405,7 @@ export const InternoDashboard: React.FC = () => {
     if (!data) return [];
 
     const gruposMap: Record<number, GrupoRecord> = {};
-    data.metadata.grupos.forEach((grupoName, idx) => {
+    data.metadata.grupo_oficinas.forEach((grupoName, idx) => {
       gruposMap[idx] = {
         name: grupoName,
         idx,
@@ -290,14 +419,32 @@ export const InternoDashboard: React.FC = () => {
     const usedesMap: Record<number, Record<number, UltimoSedeRecord>> = {};
 
     data.records.forEach(rec => {
-      const [gIdx, usIdx, ueIdx, tupaCode, procIdx, _creationYear, _ingresoYear, bandejaIdx, dateIdx, origenCode, _cutIdx] = rec;
+      const [
+        sedeCode,
+        organoIdxVal,
+        goIdx,
+        usIdx,
+        ueIdx,
+        tupaCode,
+        procIdx,
+        _creationYear,
+        _ingresoYear,
+        bandejaIdx,
+        dateIdx,
+        origenCode,
+        _cutIdx,
+        _plazoIdx,
+        diasTranscurridos
+      ] = rec;
 
       const tupaVal = tupaCode === 0 ? 1 : 0;
       const noTupaVal = tupaCode === 1 ? 1 : 0;
 
       // Apply Filters
-      if (filterSede === 0) return; // Sede Central has no records in this db yet
-      if (filterGrupo !== -1 && gIdx !== filterGrupo) return;
+      if (filterSede === 0 && sedeCode !== 0) return;
+      if (filterSede === 1 && sedeCode !== 1) return;
+      if (filterOrgano !== -1 && organoIdxVal !== filterOrgano) return;
+      if (filterGrupo !== -1 && goIdx !== filterGrupo) return;
       if (filterOficina !== -1 && usIdx !== filterOficina) return;
       if (filterTupa !== -1 && tupaCode !== filterTupa) return;
       if (filterBandeja !== -1 && bandejaIdx !== filterBandeja) return;
@@ -307,22 +454,27 @@ export const InternoDashboard: React.FC = () => {
         const dStr = data.metadata.dates[dateIdx];
         if (dStr < filterStartDate || dStr > filterEndDate) return;
       }
+      if (filterSemaforo !== 'TODOS') {
+        const plazoVal = data.metadata.plazos[_plazoIdx];
+        const semaforoColor = getSemaforoColor(diasTranscurridos, plazoVal);
+        if (semaforoColor !== filterSemaforo) return;
+      }
 
-      const grupo = gruposMap[gIdx];
+      const grupo = gruposMap[goIdx];
       if (!grupo) return;
 
       grupo.total += 1;
       grupo.noTupa += noTupaVal;
       grupo.tupa += tupaVal;
 
-      if (!usedesMap[gIdx]) usedesMap[gIdx] = {};
-      if (!usedesMap[gIdx][usIdx]) {
-        usedesMap[gIdx][usIdx] = {
+      if (!usedesMap[goIdx]) usedesMap[goIdx] = {};
+      if (!usedesMap[goIdx][usIdx]) {
+        usedesMap[goIdx][usIdx] = {
           name: data.metadata.ultimo_sedes[usIdx] || 'Sin Oficina',
           total: 0, noTupa: 0, tupa: 0, escritorios: {}
         };
       }
-      const sedeEntry = usedesMap[gIdx][usIdx];
+      const sedeEntry = usedesMap[goIdx][usIdx];
       sedeEntry.total += 1;
       sedeEntry.noTupa += noTupaVal;
       sedeEntry.tupa += tupaVal;
@@ -335,20 +487,94 @@ export const InternoDashboard: React.FC = () => {
       sedeEntry.escritorios[ueName].tupa += tupaVal;
     });
 
-    data.metadata.grupos.forEach((_, gIdx) => {
-      const grupo = gruposMap[gIdx];
-      if (usedesMap[gIdx]) {
-        grupo.ultimoSedes = Object.values(usedesMap[gIdx]).sort((a, b) => b.total - a.total);
+    data.metadata.grupo_oficinas.forEach((_, goIdx) => {
+      const grupo = gruposMap[goIdx];
+      if (usedesMap[goIdx]) {
+        grupo.ultimoSedes = Object.values(usedesMap[goIdx]).sort((a, b) => b.total - a.total);
       }
     });
 
-    return Object.values(gruposMap);
-  }, [data, filterSede, filterGrupo, filterOficina, filterTupa, filterBandeja, filterProcedimiento, filterOrigen, filterStartDate, filterEndDate]);
+    // Return only groups that have records under current filters
+    return Object.values(gruposMap).filter(g => g.total > 0);
+  }, [data, filterSede, filterGrupo, filterOrgano, filterOficina, filterTupa, filterBandeja, filterProcedimiento, filterOrigen, filterStartDate, filterEndDate]);
 
   // Sort rawData by total descending for the hierarchy chart
   const sortedRawData = useMemo(() => {
     return [...rawData].sort((a, b) => b.total - a.total);
   }, [rawData]);
+
+  // Aggregate traffic light counts for each item in the vertical drilldown level
+  const structChartSemaforoCounts = useMemo(() => {
+    if (!data) return {} as Record<string, { VERDE: number; AMARILLO: number; ANARANJADO: number; ROJO: number; SIN_PLAZO: number }>;
+    
+    const level = drilldownPath.length;
+    const counts: Record<string, { VERDE: number; AMARILLO: number; ANARANJADO: number; ROJO: number; SIN_PLAZO: number }> = {};
+
+    data.records.forEach(rec => {
+      const [
+        sedeCode,
+        organoIdx,
+        goIdx,
+        usIdx,
+        ueIdx,
+        tupaCode,
+        procIdx,
+        _creationYear,
+        _ingresoYear,
+        bandejaIdx,
+        dateIdx,
+        origenCode,
+        _cutIdx,
+        _plazoIdx,
+        diasTranscurridos
+      ] = rec;
+
+      // Apply the dashboard filters (excluding filterSemaforo so we can see all segments stacked)
+      if (filterSede === 0 && sedeCode !== 0) return;
+      if (filterSede === 1 && sedeCode !== 1) return;
+      if (filterOrgano !== -1 && organoIdx !== filterOrgano) return;
+      if (filterGrupo !== -1 && goIdx !== filterGrupo) return;
+      if (filterOficina !== -1 && usIdx !== filterOficina) return;
+      if (filterTupa !== -1 && tupaCode !== filterTupa) return;
+      if (filterBandeja !== -1 && bandejaIdx !== filterBandeja) return;
+      if (filterProcedimiento !== -1 && procIdx !== filterProcedimiento) return;
+      if (filterOrigen !== -1 && origenCode !== filterOrigen) return;
+      if (filterStartDate && filterEndDate) {
+        const dStr = data.metadata.dates[dateIdx];
+        if (dStr < filterStartDate || dStr > filterEndDate) return;
+      }
+
+      let itemKey = "";
+      if (level === 0) {
+        // level 0: grouped by goIdx (matching sortedRawData name)
+        itemKey = data.metadata.grupo_oficinas[goIdx] || "";
+      } else if (level === 1) {
+        // level 1: grouped by usIdx under selected group (drilldownPath[0])
+        if (goIdx === drilldownPath[0]) {
+          itemKey = data.metadata.ultimo_sedes[usIdx] || "";
+        }
+      } else if (level === 2) {
+        // level 2: grouped by ueIdx under selected group and office
+        const groupRecord = sortedRawData.find(g => g.idx === drilldownPath[0]);
+        const selectedOfficeName = groupRecord?.ultimoSedes[drilldownPath[1]]?.name;
+        if (goIdx === drilldownPath[0] && data.metadata.ultimo_sedes[usIdx] === selectedOfficeName) {
+          itemKey = data.metadata.ultimo_escritorios[ueIdx] || "";
+        }
+      }
+
+      if (!itemKey) return;
+
+      const plazoVal = data.metadata.plazos[_plazoIdx];
+      const semaforoColor = getSemaforoColor(diasTranscurridos, plazoVal);
+
+      if (!counts[itemKey]) {
+        counts[itemKey] = { VERDE: 0, AMARILLO: 0, ANARANJADO: 0, ROJO: 0, SIN_PLAZO: 0 };
+      }
+      counts[itemKey][semaforoColor]++;
+    });
+
+    return counts;
+  }, [data, drilldownPath, sortedRawData, filterSede, filterOrgano, filterGrupo, filterOficina, filterTupa, filterBandeja, filterProcedimiento, filterOrigen, filterStartDate, filterEndDate]);
 
   // Filter and process data dynamically with 100% accuracy at record level
   const metrics = useMemo(() => {
@@ -367,13 +593,27 @@ export const InternoDashboard: React.FC = () => {
         procedures: {} as Record<string, { total: number, noTupa: number, tupa: number }>,
         bottleneckOffice: null as { name: string, count: number } | null,
         topProcedure: null as { name: string, count: number } | null,
-        oldestYear: null as number | null
+        oldestYear: null as number | null,
+        verde: 0,
+        amarillo: 0,
+        anaranjado: 0,
+        rojo: 0,
+        sinPlazo: 0,
+        groupSemaforoCounts: {} as Record<string, { VERDE: number; AMARILLO: number; ANARANJADO: number; ROJO: number; SIN_PLAZO: number }>
       };
     }
 
     let totalPendientes = 0;
     let noTupaCount = 0;
     let tupaCount = 0;
+
+    let verdeCount = 0;
+    let amarilloCount = 0;
+    let anaranjadoCount = 0;
+    let rojoCount = 0;
+    let sinPlazoCount = 0;
+
+    const groupSemaforoCounts: Record<string, { VERDE: number; AMARILLO: number; ANARANJADO: number; ROJO: number; SIN_PLAZO: number }> = {};
 
     const yearsCreation: Record<number, number> = {};
     const yearsEscritorio: Record<number, number> = {};
@@ -386,11 +626,29 @@ export const InternoDashboard: React.FC = () => {
     const uniqueCutsSet = new Set<number>();
 
     data.records.forEach(rec => {
-      const [gIdx, usIdx, _, tupaCode, procIdx, creationYear, ingresoYear, bandejaIdx, dateIdx, origenCode, cutIdx] = rec;
+      const [
+        sedeCode,
+        organoIdx,
+        goIdx,
+        usIdx,
+        _ueIdx,
+        tupaCode,
+        procIdx,
+        creationYear,
+        ingresoYear,
+        bandejaIdx,
+        dateIdx,
+        origenCode,
+        cutIdx,
+        _plazoIdx,
+        diasTranscurridos
+      ] = rec;
 
-      // Apply same filters for metrics
-      if (filterSede === 0) return; // Sede Central has no records in this db yet
-      if (filterGrupo !== -1 && gIdx !== filterGrupo) return;
+      // Apply same filters for metrics (excluding semaforo for counts itself)
+      if (filterSede === 0 && sedeCode !== 0) return;
+      if (filterSede === 1 && sedeCode !== 1) return;
+      if (filterOrgano !== -1 && organoIdx !== filterOrgano) return;
+      if (filterGrupo !== -1 && goIdx !== filterGrupo) return;
       if (filterOficina !== -1 && usIdx !== filterOficina) return;
       if (filterTupa !== -1 && tupaCode !== filterTupa) return;
       if (filterBandeja !== -1 && bandejaIdx !== filterBandeja) return;
@@ -401,10 +659,32 @@ export const InternoDashboard: React.FC = () => {
         if (dStr < filterStartDate || dStr > filterEndDate) return;
       }
 
+      const plazoVal = data.metadata.plazos[_plazoIdx];
+      const semaforoColor = getSemaforoColor(diasTranscurridos, plazoVal);
+
+      // Accumulate color counts globally
+      if (semaforoColor === 'VERDE') verdeCount++;
+      else if (semaforoColor === 'AMARILLO') amarilloCount++;
+      else if (semaforoColor === 'ANARANJADO') anaranjadoCount++;
+      else if (semaforoColor === 'ROJO') rojoCount++;
+      else if (semaforoColor === 'SIN_PLAZO') sinPlazoCount++;
+
+      const organoName = data.metadata.grupos[organoIdx];
+      const ultimoSedeName = data.metadata.ultimo_sedes[usIdx];
+
+      // Grouping for Semaforo Distribution card (calculated before applying semaforo filter)
+      const groupKey = filterGrupo !== -1 ? ultimoSedeName : organoName;
+      if (!groupSemaforoCounts[groupKey]) {
+        groupSemaforoCounts[groupKey] = { VERDE: 0, AMARILLO: 0, ANARANJADO: 0, ROJO: 0, SIN_PLAZO: 0 };
+      }
+      groupSemaforoCounts[groupKey][semaforoColor]++;
+
+      // Apply semaforo filter to standard dashboard counts
+      if (filterSemaforo !== 'TODOS' && semaforoColor !== filterSemaforo) return;
+
+      const isNewCut = !uniqueCutsSet.has(cutIdx);
       uniqueCutsSet.add(cutIdx);
 
-      const grupoName = data.metadata.grupos[gIdx];
-      const ultimoSedeName = data.metadata.ultimo_sedes[usIdx];
       const tupaVal = tupaCode === 0 ? 1 : 0;
       const noTupaVal = tupaCode === 1 ? 1 : 0;
       const bName = data.metadata.bandejas[bandejaIdx];
@@ -412,8 +692,10 @@ export const InternoDashboard: React.FC = () => {
 
       // Increment metrics
       totalPendientes += 1;
-      noTupaCount += noTupaVal;
-      tupaCount += tupaVal;
+      if (isNewCut) {
+        if (tupaCode === 0) tupaCount++;
+        else if (tupaCode === 1) noTupaCount++;
+      }
 
       yearsCreation[creationYear] = (yearsCreation[creationYear] || 0) + 1;
       yearsEscritorio[ingresoYear] = (yearsEscritorio[ingresoYear] || 0) + 1;
@@ -423,8 +705,7 @@ export const InternoDashboard: React.FC = () => {
       procedures[pName].noTupa += noTupaVal;
       procedures[pName].tupa += tupaVal;
 
-      // Grouping (Dynamic for Top 5)
-      const groupKey = filterGrupo !== -1 ? ultimoSedeName : grupoName;
+      // Grouping (Dynamic for Top 5 / listToDisplay)
       if (!groupCounts[groupKey]) {
         groupCounts[groupKey] = { total: 0, noTupa: 0, tupa: 0 };
       }
@@ -432,13 +713,13 @@ export const InternoDashboard: React.FC = () => {
       groupCounts[groupKey].noTupa += noTupaVal;
       groupCounts[groupKey].tupa += tupaVal;
 
-      // Grouping (Static by Grupo for Stacked Bar Chart)
-      if (!staticGroupCounts[grupoName]) {
-        staticGroupCounts[grupoName] = { total: 0, noTupa: 0, tupa: 0 };
+      // Grouping (Static by Grupo for Stacked Bar Chart - Chart 1)
+      if (!staticGroupCounts[organoName]) {
+        staticGroupCounts[organoName] = { total: 0, noTupa: 0, tupa: 0 };
       }
-      staticGroupCounts[grupoName].total += 1;
-      staticGroupCounts[grupoName].noTupa += noTupaVal;
-      staticGroupCounts[grupoName].tupa += tupaVal;
+      staticGroupCounts[organoName].total += 1;
+      staticGroupCounts[organoName].noTupa += noTupaVal;
+      staticGroupCounts[organoName].tupa += tupaVal;
     });
 
     const listToDisplay = Object.entries(groupCounts).map(([name, counts]) => ({
@@ -466,17 +747,14 @@ export const InternoDashboard: React.FC = () => {
           }
         });
       }
-    } else {
-      rawData.forEach(grupo => {
-        if (!groupCounts[grupo.name]) {
-          listToDisplay.push({ name: grupo.name, total: 0, noTupa: 0, tupa: 0 });
-        }
-      });
     }
 
-    rawData.forEach(grupo => {
-      if (!staticGroupCounts[grupo.name]) {
-        gruposStaticList.push({ name: grupo.name, total: 0, noTupa: 0, tupa: 0 });
+    data.metadata.grupos.forEach((grupoName, idx) => {
+      const isOD = idx < 14;
+      if (filterSede === 0 && isOD) return;
+      if (filterSede === 1 && !isOD) return;
+      if (!staticGroupCounts[grupoName]) {
+        gruposStaticList.push({ name: grupoName, total: 0, noTupa: 0, tupa: 0 });
       }
     });
 
@@ -509,9 +787,604 @@ export const InternoDashboard: React.FC = () => {
       procedures,
       bottleneckOffice,
       topProcedure,
-      oldestYear
+      oldestYear,
+      verde: verdeCount,
+      amarillo: amarilloCount,
+      anaranjado: anaranjadoCount,
+      rojo: rojoCount,
+      sinPlazo: sinPlazoCount,
+      groupSemaforoCounts
     };
-  }, [data, rawData, filterGrupo, filterOficina, filterTupa, filterBandeja, filterProcedimiento, filterOrigen, filterStartDate, filterEndDate, filterSede]);
+  }, [data, rawData, filterGrupo, filterOrgano, filterOficina, filterTupa, filterBandeja, filterProcedimiento, filterOrigen, filterStartDate, filterEndDate, filterSede, filterSemaforo]);
+
+  const scOrganos = useMemo(() => {
+    if (!data) return [];
+    return data.metadata.grupos
+      .map((name, idx) => ({ name: name.replace(/^Sede Central - /, ""), idx }))
+      .slice(14);
+  }, [data]);
+
+  const customGruposList = useMemo(() => {
+    if (!data) return [];
+    if (filterSede === 0) {
+      return data.metadata.grupo_oficinas
+        .map((name, idx) => ({ name: name.replace(/^SC - /, ""), idx }))
+        .slice(14);
+    } else {
+      return data.metadata.grupo_oficinas
+        .map((name, idx) => ({ name: name.replace(/^SC - /, ""), idx }))
+        .slice(0, 14);
+    }
+  }, [data, filterSede]);
+
+  const chart1Data = useMemo(() => {
+    if (!data) return { level: 0, title: "DISTRIBUCIÓN POR SEDE", items: [], breadcrumbs: [] };
+
+    const breadcrumbs: { label: string, onClick: () => void }[] = [];
+    breadcrumbs.push({
+      label: "Sedes (Nacional)",
+      onClick: () => {
+        setFilterSede(-1);
+        setFilterOrgano(-1);
+        setFilterGrupo(-1);
+        setFilterOficina(-1);
+      }
+    });
+
+    if (filterSede === -1) {
+      let scTotal = 0, scTupa = 0, scNoTupa = 0;
+      let odTotal = 0, odTupa = 0, odNoTupa = 0;
+
+      data.records.forEach(rec => {
+        const [
+          sedeCode,
+          _organoIdx,
+          _goIdx,
+          _usIdx,
+          _ueIdx,
+          tupaCode,
+          procIdx,
+          _creationYear,
+          _ingresoYear,
+          bandejaIdx,
+          dateIdx,
+          origenCode,
+          _cutIdx,
+          _plazoIdx
+        ] = rec;
+
+        if (filterTupa !== -1 && tupaCode !== filterTupa) return;
+        if (filterBandeja !== -1 && bandejaIdx !== filterBandeja) return;
+        if (filterProcedimiento !== -1 && procIdx !== filterProcedimiento) return;
+        if (filterOrigen !== -1 && origenCode !== filterOrigen) return;
+        if (filterStartDate && filterEndDate) {
+          const dStr = data.metadata.dates[dateIdx];
+          if (dStr < filterStartDate || dStr > filterEndDate) return;
+        }
+        if (isSemaforoFiltered(rec)) return;
+
+        const tupaVal = tupaCode === 0 ? 1 : 0;
+        const noTupaVal = tupaCode === 1 ? 1 : 0;
+
+        if (sedeCode === 0) {
+          scTotal++;
+          scTupa += tupaVal;
+          scNoTupa += noTupaVal;
+        } else {
+          odTotal++;
+          odTupa += tupaVal;
+          odNoTupa += noTupaVal;
+        }
+      });
+
+      const items = [
+        { id: "SC", name: "Sede Central", total: scTotal, tupa: scTupa, noTupa: scNoTupa, rawId: 0 },
+        { id: "OD", name: "Órganos Desconcentrados", total: odTotal, tupa: odTupa, noTupa: odNoTupa, rawId: 1 },
+        { id: "TOT", name: "Total General", total: scTotal + odTotal, tupa: scTupa + odTupa, noTupa: scNoTupa + odNoTupa, rawId: -1 }
+      ];
+
+      return {
+        level: 0,
+        title: "DISTRIBUCIÓN POR SEDE",
+        items,
+        breadcrumbs
+      };
+    }
+
+    if (filterSede === 0) {
+      breadcrumbs.push({
+        label: "Sede Central",
+        onClick: () => {
+          setFilterOrgano(-1);
+          setFilterGrupo(-1);
+          setFilterOficina(-1);
+        }
+      });
+
+      if (filterOrgano === -1) {
+        const counts: Record<number, { total: number, tupa: number, noTupa: number }> = {};
+        data.records.forEach(rec => {
+          const [
+            sedeCode,
+            organoIdx,
+            _goIdx,
+            _usIdx,
+            _ueIdx,
+            tupaCode,
+            procIdx,
+            _creationYear,
+            _ingresoYear,
+            bandejaIdx,
+            dateIdx,
+            origenCode,
+            _cutIdx,
+            _plazoIdx
+          ] = rec;
+
+          if (sedeCode !== 0) return;
+          if (filterTupa !== -1 && tupaCode !== filterTupa) return;
+          if (filterBandeja !== -1 && bandejaIdx !== filterBandeja) return;
+          if (filterProcedimiento !== -1 && procIdx !== filterProcedimiento) return;
+          if (filterOrigen !== -1 && origenCode !== filterOrigen) return;
+          if (filterStartDate && filterEndDate) {
+            const dStr = data.metadata.dates[dateIdx];
+            if (dStr < filterStartDate || dStr > filterEndDate) return;
+          }
+          if (isSemaforoFiltered(rec)) return;
+
+          const tupaVal = tupaCode === 0 ? 1 : 0;
+          const noTupaVal = tupaCode === 1 ? 1 : 0;
+
+          if (!counts[organoIdx]) counts[organoIdx] = { total: 0, tupa: 0, noTupa: 0 };
+          counts[organoIdx].total++;
+          counts[organoIdx].tupa += tupaVal;
+          counts[organoIdx].noTupa += noTupaVal;
+        });
+
+        const items = Object.entries(counts).map(([orgIdxStr, stats]) => {
+          const orgIdx = Number(orgIdxStr);
+          const rawName = data.metadata.grupos[orgIdx] || "Sin Órgano";
+          const name = rawName.replace(/^Sede Central - /, "");
+          return {
+            id: orgIdx,
+            name,
+            total: stats.total,
+            tupa: stats.tupa,
+            noTupa: stats.noTupa,
+            rawId: orgIdx
+          };
+        }).sort((a, b) => b.total - a.total);
+
+        return {
+          level: 1,
+          title: "DISTRIBUCIÓN POR ÓRGANO",
+          items,
+          breadcrumbs
+        };
+      }
+
+      const organoName = (data.metadata.grupos[filterOrgano] || "Órgano").replace(/^Sede Central - /, "");
+      breadcrumbs.push({
+        label: organoName,
+        onClick: () => {
+          setFilterGrupo(-1);
+          setFilterOficina(-1);
+        }
+      });
+
+      if (filterGrupo === -1) {
+        const counts: Record<number, { total: number, tupa: number, noTupa: number }> = {};
+        data.records.forEach(rec => {
+          const [
+            sedeCode,
+            organoIdx,
+            goIdx,
+            _usIdx,
+            _ueIdx,
+            tupaCode,
+            procIdx,
+            _creationYear,
+            _ingresoYear,
+            bandejaIdx,
+            dateIdx,
+            origenCode,
+            _cutIdx,
+            _plazoIdx
+          ] = rec;
+
+          if (sedeCode !== 0) return;
+          if (organoIdx !== filterOrgano) return;
+          if (filterTupa !== -1 && tupaCode !== filterTupa) return;
+          if (filterBandeja !== -1 && bandejaIdx !== filterBandeja) return;
+          if (filterProcedimiento !== -1 && procIdx !== filterProcedimiento) return;
+          if (filterOrigen !== -1 && origenCode !== filterOrigen) return;
+          if (filterStartDate && filterEndDate) {
+            const dStr = data.metadata.dates[dateIdx];
+            if (dStr < filterStartDate || dStr > filterEndDate) return;
+          }
+          if (isSemaforoFiltered(rec)) return;
+
+          const tupaVal = tupaCode === 0 ? 1 : 0;
+          const noTupaVal = tupaCode === 1 ? 1 : 0;
+
+          if (!counts[goIdx]) counts[goIdx] = { total: 0, tupa: 0, noTupa: 0 };
+          counts[goIdx].total++;
+          counts[goIdx].tupa += tupaVal;
+          counts[goIdx].noTupa += noTupaVal;
+        });
+
+        const items = Object.entries(counts).map(([goIdxStr, stats]) => {
+          const goIdx = Number(goIdxStr);
+          const rawName = data.metadata.grupo_oficinas[goIdx] || "Sin Oficina Padre";
+          const name = rawName.replace(/^SC - /, "");
+          return {
+            id: goIdx,
+            name,
+            total: stats.total,
+            tupa: stats.tupa,
+            noTupa: stats.noTupa,
+            rawId: goIdx
+          };
+        }).sort((a, b) => b.total - a.total);
+
+        return {
+          level: 2,
+          title: "DISTRIBUCIÓN POR OFICINA PADRE",
+          items,
+          breadcrumbs
+        };
+      }
+
+      const oficinaPadreName = (data.metadata.grupo_oficinas[filterGrupo] || "Oficina Padre").replace(/^SC - /, "");
+      breadcrumbs.push({
+        label: oficinaPadreName,
+        onClick: () => {
+          setFilterOficina(-1);
+        }
+      });
+
+      if (filterOficina === -1) {
+        const counts: Record<number, { total: number, tupa: number, noTupa: number }> = {};
+        data.records.forEach(rec => {
+          const [
+            sedeCode,
+            organoIdx,
+            goIdx,
+            usIdx,
+            _ueIdx,
+            tupaCode,
+            procIdx,
+            _creationYear,
+            _ingresoYear,
+            bandejaIdx,
+            dateIdx,
+            origenCode,
+            _cutIdx,
+            _plazoIdx
+          ] = rec;
+
+          if (sedeCode !== 0) return;
+          if (organoIdx !== filterOrgano) return;
+          if (goIdx !== filterGrupo) return;
+          if (filterTupa !== -1 && tupaCode !== filterTupa) return;
+          if (filterBandeja !== -1 && bandejaIdx !== filterBandeja) return;
+          if (filterProcedimiento !== -1 && procIdx !== filterProcedimiento) return;
+          if (filterOrigen !== -1 && origenCode !== filterOrigen) return;
+          if (filterStartDate && filterEndDate) {
+            const dStr = data.metadata.dates[dateIdx];
+            if (dStr < filterStartDate || dStr > filterEndDate) return;
+          }
+          if (isSemaforoFiltered(rec)) return;
+
+          const tupaVal = tupaCode === 0 ? 1 : 0;
+          const noTupaVal = tupaCode === 1 ? 1 : 0;
+
+          if (!counts[usIdx]) counts[usIdx] = { total: 0, tupa: 0, noTupa: 0 };
+          counts[usIdx].total++;
+          counts[usIdx].tupa += tupaVal;
+          counts[usIdx].noTupa += noTupaVal;
+        });
+
+        const items = Object.entries(counts).map(([usIdxStr, stats]) => {
+          const usIdx = Number(usIdxStr);
+          const name = data.metadata.ultimo_sedes[usIdx] || "Sin Oficina";
+          return {
+            id: usIdx,
+            name,
+            total: stats.total,
+            tupa: stats.tupa,
+            noTupa: stats.noTupa,
+            rawId: usIdx
+          };
+        }).sort((a, b) => b.total - a.total);
+
+        return {
+          level: 3,
+          title: "DISTRIBUCIÓN POR OFICINA (ÁREA)",
+          items,
+          breadcrumbs
+        };
+      }
+
+      const officeName = data.metadata.ultimo_sedes[filterOficina] || "Oficina";
+      breadcrumbs.push({
+        label: officeName,
+        onClick: () => {}
+      });
+
+      const counts: Record<number, { total: number, tupa: number, noTupa: number }> = {};
+      data.records.forEach(rec => {
+        const [
+          sedeCode,
+          organoIdx,
+          goIdx,
+          usIdx,
+          ueIdx,
+          tupaCode,
+          procIdx,
+          _creationYear,
+          _ingresoYear,
+          bandejaIdx,
+          dateIdx,
+          origenCode,
+          _cutIdx,
+          _plazoIdx
+        ] = rec;
+
+        if (sedeCode !== 0) return;
+        if (organoIdx !== filterOrgano) return;
+        if (goIdx !== filterGrupo) return;
+        if (usIdx !== filterOficina) return;
+        if (filterTupa !== -1 && tupaCode !== filterTupa) return;
+        if (filterBandeja !== -1 && bandejaIdx !== filterBandeja) return;
+        if (filterProcedimiento !== -1 && procIdx !== filterProcedimiento) return;
+        if (filterOrigen !== -1 && origenCode !== filterOrigen) return;
+        if (filterStartDate && filterEndDate) {
+          const dStr = data.metadata.dates[dateIdx];
+          if (dStr < filterStartDate || dStr > filterEndDate) return;
+        }
+        if (isSemaforoFiltered(rec)) return;
+
+        const tupaVal = tupaCode === 0 ? 1 : 0;
+        const noTupaVal = tupaCode === 1 ? 1 : 0;
+
+        if (!counts[ueIdx]) counts[ueIdx] = { total: 0, tupa: 0, noTupa: 0 };
+        counts[ueIdx].total++;
+        counts[ueIdx].tupa += tupaVal;
+        counts[ueIdx].noTupa += noTupaVal;
+      });
+
+      const items = Object.entries(counts).map(([ueIdxStr, stats]) => {
+        const ueIdx = Number(ueIdxStr);
+        const name = data.metadata.ultimo_escritorios[ueIdx] || "Sin Asignar";
+        return {
+          id: ueIdx,
+          name,
+          total: stats.total,
+          tupa: stats.tupa,
+          noTupa: stats.noTupa,
+          rawId: ueIdx
+        };
+      }).sort((a, b) => b.total - a.total);
+
+      return {
+        level: 4,
+        title: "DISTRIBUCIÓN POR PROFESIONAL",
+        items,
+        breadcrumbs
+      };
+    }
+
+    if (filterSede === 1) {
+      breadcrumbs.push({
+        label: "Órganos Desconcentrados",
+        onClick: () => {
+          setFilterGrupo(-1);
+          setFilterOficina(-1);
+        }
+      });
+
+      if (filterGrupo === -1) {
+        const counts: Record<number, { total: number, tupa: number, noTupa: number }> = {};
+        data.records.forEach(rec => {
+          const [
+            sedeCode,
+            _organoIdx,
+            goIdx,
+            _usIdx,
+            _ueIdx,
+            tupaCode,
+            procIdx,
+            _creationYear,
+            _ingresoYear,
+            bandejaIdx,
+            dateIdx,
+            origenCode,
+            _cutIdx,
+            _plazoIdx
+          ] = rec;
+
+          if (sedeCode !== 1) return;
+          if (filterTupa !== -1 && tupaCode !== filterTupa) return;
+          if (filterBandeja !== -1 && bandejaIdx !== filterBandeja) return;
+          if (filterProcedimiento !== -1 && procIdx !== filterProcedimiento) return;
+          if (filterOrigen !== -1 && origenCode !== filterOrigen) return;
+          if (filterStartDate && filterEndDate) {
+            const dStr = data.metadata.dates[dateIdx];
+            if (dStr < filterStartDate || dStr > filterEndDate) return;
+          }
+          if (isSemaforoFiltered(rec)) return;
+
+          const tupaVal = tupaCode === 0 ? 1 : 0;
+          const noTupaVal = tupaCode === 1 ? 1 : 0;
+
+          if (!counts[goIdx]) counts[goIdx] = { total: 0, tupa: 0, noTupa: 0 };
+          counts[goIdx].total++;
+          counts[goIdx].tupa += tupaVal;
+          counts[goIdx].noTupa += noTupaVal;
+        });
+
+        const items = Object.entries(counts).map(([goIdxStr, stats]) => {
+          const goIdx = Number(goIdxStr);
+          const name = data.metadata.grupo_oficinas[goIdx] || "Sin Ámbito";
+          return {
+            id: goIdx,
+            name,
+            total: stats.total,
+            tupa: stats.tupa,
+            noTupa: stats.noTupa,
+            rawId: goIdx
+          };
+        }).sort((a, b) => b.total - a.total);
+
+        return {
+          level: 1,
+          title: "DISTRIBUCIÓN POR ÁMBITO (AAA)",
+          items,
+          breadcrumbs
+        };
+      }
+
+      const aaaName = data.metadata.grupo_oficinas[filterGrupo] || "Ámbito";
+      breadcrumbs.push({
+        label: aaaName,
+        onClick: () => {
+          setFilterOficina(-1);
+        }
+      });
+
+      if (filterOficina === -1) {
+        const counts: Record<number, { total: number, tupa: number, noTupa: number }> = {};
+        data.records.forEach(rec => {
+          const [
+            sedeCode,
+            _organoIdx,
+            goIdx,
+            usIdx,
+            _ueIdx,
+            tupaCode,
+            procIdx,
+            _creationYear,
+            _ingresoYear,
+            bandejaIdx,
+            dateIdx,
+            origenCode,
+            _cutIdx,
+            _plazoIdx
+          ] = rec;
+
+          if (sedeCode !== 1) return;
+          if (goIdx !== filterGrupo) return;
+          if (filterTupa !== -1 && tupaCode !== filterTupa) return;
+          if (filterBandeja !== -1 && bandejaIdx !== filterBandeja) return;
+          if (filterProcedimiento !== -1 && procIdx !== filterProcedimiento) return;
+          if (filterOrigen !== -1 && origenCode !== filterOrigen) return;
+          if (filterStartDate && filterEndDate) {
+            const dStr = data.metadata.dates[dateIdx];
+            if (dStr < filterStartDate || dStr > filterEndDate) return;
+          }
+          if (isSemaforoFiltered(rec)) return;
+
+          const tupaVal = tupaCode === 0 ? 1 : 0;
+          const noTupaVal = tupaCode === 1 ? 1 : 0;
+
+          if (!counts[usIdx]) counts[usIdx] = { total: 0, tupa: 0, noTupa: 0 };
+          counts[usIdx].total++;
+          counts[usIdx].tupa += tupaVal;
+          counts[usIdx].noTupa += noTupaVal;
+        });
+
+        const items = Object.entries(counts).map(([usIdxStr, stats]) => {
+          const usIdx = Number(usIdxStr);
+          const name = data.metadata.ultimo_sedes[usIdx] || "Sin Oficina";
+          return {
+            id: usIdx,
+            name,
+            total: stats.total,
+            tupa: stats.tupa,
+            noTupa: stats.noTupa,
+            rawId: usIdx
+          };
+        }).sort((a, b) => b.total - a.total);
+
+        return {
+          level: 2,
+          title: "DISTRIBUCIÓN POR OFICINA (ALA / AAA)",
+          items,
+          breadcrumbs
+        };
+      }
+
+      const officeName = data.metadata.ultimo_sedes[filterOficina] || "Oficina";
+      breadcrumbs.push({
+        label: officeName,
+        onClick: () => {}
+      });
+
+      const counts: Record<number, { total: number, tupa: number, noTupa: number }> = {};
+      data.records.forEach(rec => {
+        const [
+          sedeCode,
+          _organoIdx,
+          goIdx,
+          usIdx,
+          ueIdx,
+          tupaCode,
+          procIdx,
+          _creationYear,
+          _ingresoYear,
+          bandejaIdx,
+          dateIdx,
+          origenCode,
+          _cutIdx,
+          _plazoIdx
+        ] = rec;
+
+        if (sedeCode !== 1) return;
+        if (goIdx !== filterGrupo) return;
+        if (usIdx !== filterOficina) return;
+        if (filterTupa !== -1 && tupaCode !== filterTupa) return;
+        if (filterBandeja !== -1 && bandejaIdx !== filterBandeja) return;
+        if (filterProcedimiento !== -1 && procIdx !== filterProcedimiento) return;
+        if (filterOrigen !== -1 && origenCode !== filterOrigen) return;
+        if (filterStartDate && filterEndDate) {
+          const dStr = data.metadata.dates[dateIdx];
+          if (dStr < filterStartDate || dStr > filterEndDate) return;
+        }
+        if (isSemaforoFiltered(rec)) return;
+
+        const tupaVal = tupaCode === 0 ? 1 : 0;
+        const noTupaVal = tupaCode === 1 ? 1 : 0;
+
+        if (!counts[ueIdx]) counts[ueIdx] = { total: 0, tupa: 0, noTupa: 0 };
+        counts[ueIdx].total++;
+        counts[ueIdx].tupa += tupaVal;
+        counts[ueIdx].noTupa += noTupaVal;
+      });
+
+      const items = Object.entries(counts).map(([ueIdxStr, stats]) => {
+        const ueIdx = Number(ueIdxStr);
+        const name = data.metadata.ultimo_escritorios[ueIdx] || "Sin Asignar";
+        return {
+          id: ueIdx,
+          name,
+          total: stats.total,
+          tupa: stats.tupa,
+          noTupa: stats.noTupa,
+          rawId: ueIdx
+        };
+      }).sort((a, b) => b.total - a.total);
+
+      return {
+        level: 3,
+        title: "DISTRIBUCIÓN POR PROFESIONAL",
+        items,
+        breadcrumbs
+      };
+    }
+
+    return { level: 0, title: "DISTRIBUCIÓN POR SEDE", items: [], breadcrumbs: [] };
+  }, [data, filterSede, filterOrgano, filterGrupo, filterOficina, filterTupa, filterBandeja, filterProcedimiento, filterOrigen, filterStartDate, filterEndDate, filterSemaforo]);
 
   if (loading) {
     return (
@@ -543,22 +1416,22 @@ export const InternoDashboard: React.FC = () => {
     );
   }
 
-
-
   // Helper to format numbers with separators
   const formatNum = (num: number) => num.toLocaleString('es-PE');
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       <InternoFiltersBar
-        sede={filterSede} onSedeChange={(v) => { setFilterSede(v); setFilterGrupo(-1); setFilterOficina(-1); }}
-        grupo={filterGrupo} onGrupoChange={(v) => { setFilterGrupo(v); setFilterOficina(-1); }} gruposList={data.metadata.grupos}
+        sede={filterSede} onSedeChange={(v) => { setFilterSede(v); setFilterOrgano(-1); setFilterGrupo(-1); setFilterOficina(-1); }}
+        grupo={filterGrupo} onGrupoChange={(v) => { setFilterGrupo(v); setFilterOficina(-1); }} gruposList={customGruposList}
+        organo={filterOrgano} onOrganoChange={(v) => { setFilterOrgano(v); setFilterGrupo(-1); setFilterOficina(-1); }} organosList={scOrganos}
         oficina={filterOficina} onOficinaChange={setFilterOficina} oficinasList={data.metadata.ultimo_sedes} allowedOficinas={allowedOficinas}
         startDate={filterStartDate} endDate={filterEndDate} minDate={minDate} maxDate={maxDate} onStartDateChange={setFilterStartDate} onEndDateChange={setFilterEndDate}
         origen={filterOrigen} onOrigenChange={setFilterOrigen}
         bandeja={filterBandeja} onBandejaChange={setFilterBandeja} bandejasList={data.metadata.bandejas}
         tupa={filterTupa} onTupaChange={setFilterTupa}
         procedimiento={filterProcedimiento} onProcedimientoChange={setFilterProcedimiento} procedimientosList={data.metadata.procedimientos}
+        semaforo={filterSemaforo} onSemaforoChange={setFilterSemaforo}
         onClearFilters={handleClearFilters}
       />
 
@@ -644,11 +1517,11 @@ export const InternoDashboard: React.FC = () => {
           <div className="kpi-value-row">
             <div className="kpi-value">{formatNum(metrics.noTupa)}</div>
             <span className="kpi-badge green">
-              {metrics.total > 0 ? ((metrics.noTupa / metrics.total) * 100).toFixed(1) : '0.0'}%
+              {metrics.uniqueCuts > 0 ? ((metrics.noTupa / metrics.uniqueCuts) * 100).toFixed(1) : '0.0'}%
             </span>
           </div>
           <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '4px' }}>
-            Trámites internos libres de cobro TUPA
+            Trámites internos libres de cobro (Cuts únicos)
           </div>
         </div>
 
@@ -667,11 +1540,11 @@ export const InternoDashboard: React.FC = () => {
           <div className="kpi-value-row">
             <div className="kpi-value">{formatNum(metrics.tupa)}</div>
             <span className="kpi-badge orange">
-              {metrics.total > 0 ? ((metrics.tupa / metrics.total) * 100).toFixed(1) : '0.0'}%
+              {metrics.uniqueCuts > 0 ? ((metrics.tupa / metrics.uniqueCuts) * 100).toFixed(1) : '0.0'}%
             </span>
           </div>
           <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '4px' }}>
-            Procedimientos regulados administrativamente
+            Procedimientos regulados (Cuts únicos)
           </div>
         </div>
 
@@ -680,76 +1553,418 @@ export const InternoDashboard: React.FC = () => {
       {/* 4. Row 1: Horizontal Desconcentrados Bar Chart & Vertical Tupa/NoTupa comparison */}
       <div className="interno-grid-row1">
 
-        {/* Card 1: Horizontal Bar Chart (Total by Grupo) */}
+        {/* Card 1: Horizontal Bar Chart (Total by Sede / Drilldown) */}
         <div ref={chart1Ref} className="chart-card" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column' }}>
-          <div className="chart-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div className="chart-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div className="chart-card-title-box">
-              <h3>DISTRIBUCIÓN POR ÁMBITO (AAA)</h3>
-              <p>Clasificación de expedientes por dependencia territorial.</p>
+              <h3>{chart1Data.title}</h3>
+              <p>Clasificación interactiva por sede y dependencia. Haz clic en una sección para profundizar.</p>
             </div>
-            <button
-              onClick={() => handleExportChart(chart1Ref, setCopiedChart1)}
-              title={copiedChart1 ? "¡Copiado!" : "Exportar Gráfico (Copiar)"}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: copiedChart1 ? 'var(--success)' : 'rgba(255, 255, 255, 0.4)',
-                cursor: 'pointer',
-                padding: '6px',
-                borderRadius: '4px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'all 0.2s',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.color = copiedChart1 ? 'var(--success)' : '#ffffff';
-                e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.color = copiedChart1 ? 'var(--success)' : 'rgba(255, 255, 255, 0.4)';
-                e.currentTarget.style.backgroundColor = 'transparent';
-              }}
-            >
-              {copiedChart1 ? (
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              ) : (
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
-                  <circle cx="12" cy="13" r="4"></circle>
-                </svg>
-              )}
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <button
+                onClick={() => handleExportChart(chart1Ref, setCopiedChart1)}
+                title={copiedChart1 ? "¡Copiado!" : "Exportar Gráfico (Copiar)"}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: copiedChart1 ? 'var(--success)' : 'rgba(255, 255, 255, 0.4)',
+                  cursor: 'pointer',
+                  padding: '6px',
+                  borderRadius: '4px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = copiedChart1 ? 'var(--success)' : '#ffffff';
+                  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = copiedChart1 ? 'var(--success)' : 'rgba(255, 255, 255, 0.4)';
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }}
+              >
+                {copiedChart1 ? (
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                ) : (
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                    <circle cx="12" cy="13" r="4"></circle>
+                  </svg>
+                )}
+              </button>
+            </div>
           </div>
 
-          <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px', marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            {metrics.gruposStaticList
-              .sort((a, b) => b.total - a.total)
-              .map((item, idx) => {
-                const maxVal = Math.max(...metrics.gruposStaticList.map(i => i.total), 1);
-                const pctTotal = (item.total / maxVal) * 100;
-                const colors = ['var(--primary)', '#22d3ee', '#34d399', '#fbbf24', '#f97316'];
-                const barColor = colors[idx % colors.length];
-                const pctNacional = metrics.total > 0 ? ((item.total / metrics.total) * 100).toFixed(1) : '0.0';
+          <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
+            {/* Breadcrumb Navigation */}
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '11px', fontWeight: '700', padding: '8px 12px', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)' }}>
+              {chart1Data.breadcrumbs.map((bc, idx) => (
+                <React.Fragment key={idx}>
+                  {idx > 0 && <span style={{ color: 'var(--text-muted)' }}>/</span>}
+                  <span
+                    style={{
+                      color: idx === chart1Data.breadcrumbs.length - 1 ? 'var(--text-primary)' : 'var(--primary)',
+                      cursor: idx === chart1Data.breadcrumbs.length - 1 ? 'default' : 'pointer',
+                      transition: 'color var(--transition-fast)'
+                    }}
+                    onClick={bc.onClick}
+                  >
+                    {bc.label}
+                  </span>
+                </React.Fragment>
+              ))}
+            </div>
 
-                return (
-                  <div key={idx} title={`${pctNacional}% del total nacional`} style={{ display: 'flex', flexDirection: 'column', gap: '2px', cursor: 'pointer' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px', fontWeight: '700' }}>
-                      <span style={{ color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '180px' }}>{item.name}</span>
-                      <span style={{ color: barColor, fontSize: '11px', fontWeight: '900' }}>{formatNum(item.total)}</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <div style={{ flex: 1, height: '6px', backgroundColor: 'var(--bg-input)', borderRadius: '3px', overflow: 'hidden', display: 'flex' }}>
-                        {item.total > 0 && (
-                          <div style={{ width: `${pctTotal}%`, height: '100%', backgroundColor: barColor, borderRadius: '3px' }}></div>
+            {/* SVG Donut / Horizontal Bar Chart */}
+            <div style={{ flex: 1, minHeight: '350px', marginTop: '12px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              {(() => {
+                const currentItems = chart1Data.items;
+
+                if (currentItems.length === 0) {
+                  return <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>No hay datos para mostrar en este nivel.</div>;
+                }
+
+                if (chart1Data.level === 0) {
+                  const scItem = currentItems.find(i => i.id === "SC");
+                  const odItem = currentItems.find(i => i.id === "OD");
+                  const scTotal = scItem ? scItem.total : 0;
+                  const odTotal = odItem ? odItem.total : 0;
+                  const totalVal = scTotal + odTotal;
+
+                  const scPct = totalVal > 0 ? scTotal / totalVal : 0;
+                  const odPct = totalVal > 0 ? odTotal / totalVal : 0;
+
+                  const r = 75;
+                  const circ = 2 * Math.PI * r; // ~471.24
+                  const scDash = scPct * circ;
+                  const odDash = odPct * circ;
+
+                  // Midpoint angles for labels on the slices (radius = 75, offset by -90 deg / -Math.PI/2)
+                  const angleSC = -Math.PI / 2 + (scPct * Math.PI);
+                  const xSC = 110 + r * Math.cos(angleSC);
+                  const ySC = 110 + r * Math.sin(angleSC);
+
+                  const angleOD = -Math.PI / 2 + (scPct * 2 * Math.PI) + (odPct * Math.PI);
+                  const xOD = 110 + r * Math.cos(angleOD);
+                  const yOD = 110 + r * Math.sin(angleOD);
+
+                  return (
+                    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
+                      <svg width="220" height="220" style={{ overflow: 'visible' }}>
+                        <defs>
+                          <linearGradient id="gradSC" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0%" stopColor="#00dfd8" />
+                            <stop offset="100%" stopColor="#007cf0" />
+                          </linearGradient>
+                          <linearGradient id="gradOD" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0%" stopColor="#ff0080" />
+                            <stop offset="100%" stopColor="#7928ca" />
+                          </linearGradient>
+                          <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+                            <feDropShadow dx="0" dy="1.5" stdDeviation="1.5" floodColor="#000000" floodOpacity="0.6"/>
+                          </filter>
+                        </defs>
+
+                        {/* Backing Circle */}
+                        <circle cx="110" cy="110" r={r} fill="transparent" stroke="rgba(255,255,255,0.02)" strokeWidth="20" />
+
+                        {/* Slice 1: Sede Central */}
+                        {scTotal > 0 && (
+                          <circle
+                            cx="110"
+                            cy="110"
+                            r={r}
+                            fill="transparent"
+                            stroke="url(#gradSC)"
+                            strokeWidth="20"
+                            strokeDasharray={`${scDash} ${circ}`}
+                            strokeDashoffset="0"
+                            transform="rotate(-90 110 110)"
+                            strokeLinecap={odTotal > 0 ? "butt" : "round"}
+                            style={{ cursor: 'pointer', transition: 'all 0.3s' }}
+                            onClick={() => {
+                              setFilterSede(0);
+                              setFilterOrgano(-1);
+                              setFilterGrupo(-1);
+                              setFilterOficina(-1);
+                            }}
+                          >
+                            <title>Sede Central | Total: {formatNum(scTotal)} ({(scPct * 100).toFixed(1)}%)</title>
+                          </circle>
                         )}
+
+                        {/* Slice 2: Órganos Desconcentrados */}
+                        {odTotal > 0 && (
+                          <circle
+                            cx="110"
+                            cy="110"
+                            r={r}
+                            fill="transparent"
+                            stroke="url(#gradOD)"
+                            strokeWidth="20"
+                            strokeDasharray={`${odDash} ${circ}`}
+                            strokeDashoffset={-scDash}
+                            transform="rotate(-90 110 110)"
+                            strokeLinecap={scTotal > 0 ? "butt" : "round"}
+                            style={{ cursor: 'pointer', transition: 'all 0.3s' }}
+                            onClick={() => {
+                              setFilterSede(1);
+                              setFilterOrgano(-1);
+                              setFilterGrupo(-1);
+                              setFilterOficina(-1);
+                            }}
+                          >
+                            <title>Órganos Desconcentrados | Total: {formatNum(odTotal)} ({(odPct * 100).toFixed(1)}%)</title>
+                          </circle>
+                        )}
+
+                        {/* Slice labels (quantities) on the donut */}
+                        {scTotal > 0 && scPct > 0.08 && (
+                          <>
+                            <rect
+                              x={xSC - 22}
+                              y={ySC - 10}
+                              width="44"
+                              height="20"
+                              rx="6"
+                              fill="rgba(15, 23, 42, 0.85)"
+                              stroke="rgba(0, 223, 216, 0.4)"
+                              strokeWidth="1.5"
+                              style={{ pointerEvents: 'none' }}
+                            />
+                            <text 
+                              x={xSC} 
+                              y={ySC} 
+                              fill="var(--text-primary)" 
+                              fontSize="9.5" 
+                              fontWeight="900" 
+                              textAnchor="middle" 
+                              dominantBaseline="central"
+                              style={{ pointerEvents: 'none' }}
+                            >
+                              {formatNum(scTotal)}
+                            </text>
+                          </>
+                        )}
+
+                        {odTotal > 0 && odPct > 0.08 && (
+                          <>
+                            <rect
+                              x={xOD - 22}
+                              y={yOD - 10}
+                              width="44"
+                              height="20"
+                              rx="6"
+                              fill="rgba(15, 23, 42, 0.85)"
+                              stroke="rgba(255, 0, 128, 0.4)"
+                              strokeWidth="1.5"
+                              style={{ pointerEvents: 'none' }}
+                            />
+                            <text 
+                              x={xOD} 
+                              y={yOD} 
+                              fill="var(--text-primary)" 
+                              fontSize="9.5" 
+                              fontWeight="900" 
+                              textAnchor="middle" 
+                              dominantBaseline="central"
+                              style={{ pointerEvents: 'none' }}
+                            >
+                              {formatNum(odTotal)}
+                            </text>
+                          </>
+                        )}
+
+                        {/* Hole labels */}
+                        <text x="110" y="97" fill="var(--text-secondary)" fontSize="10.5" fontWeight="700" textAnchor="middle" letterSpacing="0.5px">TOTAL</text>
+                        <text x="110" y="119" fill="var(--text-primary)" fontSize="20" fontWeight="900" textAnchor="middle">{formatNum(totalVal)}</text>
+                        <text x="110" y="133" fill="var(--text-muted)" fontSize="8.5" fontWeight="700" textAnchor="middle" letterSpacing="0.5px">EXPEDIENTES</text>
+                      </svg>
+                      <div style={{ display: 'flex', justifyContent: 'center', gap: '20px', flexWrap: 'wrap', width: '100%', padding: '0 8px', marginTop: '4px' }}>
+                        <div 
+                          style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '8px', 
+                            cursor: 'pointer', 
+                            padding: '6px 12px', 
+                            borderRadius: '6px', 
+                            backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                            border: '1px solid rgba(255, 255, 255, 0.04)',
+                            transition: 'all 0.2s',
+                            userSelect: 'none'
+                          }}
+                          onClick={() => {
+                            setFilterSede(0);
+                            setFilterOrgano(-1);
+                            setFilterGrupo(-1);
+                            setFilterOficina(-1);
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = 'rgba(0, 223, 216, 0.05)';
+                            e.currentTarget.style.borderColor = 'rgba(0, 223, 216, 0.2)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.02)';
+                            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.04)';
+                          }}
+                        >
+                          <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: 'linear-gradient(135deg, #00dfd8, #007cf0)' }}></span>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                            <span style={{ color: 'var(--text-primary)', fontSize: '10px', fontWeight: '800', letterSpacing: '0.3px' }}>SEDE CENTRAL</span>
+                            <span style={{ color: 'var(--text-secondary)', fontSize: '9.5px', fontWeight: '700' }}>{(scPct * 100).toFixed(1)}%</span>
+                          </div>
+                        </div>
+
+                        <div 
+                          style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '8px', 
+                            cursor: 'pointer', 
+                            padding: '6px 12px', 
+                            borderRadius: '6px', 
+                            backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                            border: '1px solid rgba(255, 255, 255, 0.04)',
+                            transition: 'all 0.2s',
+                            userSelect: 'none'
+                          }}
+                          onClick={() => {
+                            setFilterSede(1);
+                            setFilterOrgano(-1);
+                            setFilterGrupo(-1);
+                            setFilterOficina(-1);
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = 'rgba(255, 0, 128, 0.05)';
+                            e.currentTarget.style.borderColor = 'rgba(255, 0, 128, 0.2)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.02)';
+                            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.04)';
+                          }}
+                        >
+                          <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: 'linear-gradient(135deg, #ff0080, #7928ca)' }}></span>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                            <span style={{ color: 'var(--text-primary)', fontSize: '10px', fontWeight: '800', letterSpacing: '0.3px' }}>ÓRGANOS DESCONCENTRADOS</span>
+                            <span style={{ color: 'var(--text-secondary)', fontSize: '9.5px', fontWeight: '700' }}>{(odPct * 100).toFixed(1)}%</span>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                } else {
+                  // Render Horizontal CSS Bar List (Level 1, 2, 3, etc.)
+                  const maxVal = Math.max(...currentItems.map(i => i.total), 1);
+                  const colors = ['var(--primary)', '#22d3ee', '#34d399', '#fbbf24', '#f97316'];
+                  const itemCount = currentItems.length;
+
+                  // Dynamic sizing to completely avoid scrolling at Level 1+
+                  const paddingY = itemCount > 12 ? '3px' : itemCount > 8 ? '5px' : '7px';
+                  const gapY = itemCount > 12 ? '4px' : itemCount > 8 ? '6px' : '8px';
+                  const fontSizeName = itemCount > 12 ? '9.5px' : '10.5px';
+                  const fontSizeVal = itemCount > 12 ? '10px' : '11px';
+                  const barHeight = itemCount > 12 ? '5px' : '6px';
+                  const nameFlex = itemCount > 12 ? '0 0 150px' : '0 0 180px';
+                  const overflowBehavior = itemCount > 14 ? 'auto' : 'hidden';
+
+                  return (
+                    <div style={{ flex: 1, overflowY: overflowBehavior, paddingRight: '4px', marginTop: '12px', display: 'flex', flexDirection: 'column', gap: gapY, maxHeight: '415px' }}>
+                      {currentItems.map((item, idx) => {
+                        const pctTotal = (item.total / maxVal) * 100;
+                        const barColor = colors[idx % colors.length];
+                        const pctNacional = metrics.total > 0 ? ((item.total / metrics.total) * 100).toFixed(1) : '0.0';
+
+                        const isClickable = item.rawId !== -1 && chart1Data.level < 1;
+
+                        return (
+                          <div
+                            key={item.id}
+                            title={`${pctNacional}% del total nacional | TUPA: ${item.tupa} | NO TUPA: ${item.noTupa}`}
+                            style={{ 
+                              display: 'flex', 
+                              flexDirection: 'row', 
+                              alignItems: 'center', 
+                              gap: '12px', 
+                              cursor: isClickable ? 'pointer' : 'default', 
+                              padding: `${paddingY} 6px`, 
+                              borderRadius: '4px', 
+                              transition: 'background-color 0.2s',
+                              width: '100%'
+                            }}
+                            onClick={() => {
+                              if (!isClickable) return;
+                              if (chart1Data.level === 1) {
+                                if (filterSede === 0) {
+                                  setFilterOrgano(item.rawId!);
+                                  setFilterGrupo(-1);
+                                  setFilterOficina(-1);
+                                } else {
+                                  setFilterGrupo(item.rawId!);
+                                  setFilterOficina(-1);
+                                }
+                              } else if (chart1Data.level === 2) {
+                                if (filterSede === 0) {
+                                  setFilterGrupo(item.rawId!);
+                                  setFilterOficina(-1);
+                                } else {
+                                  setFilterOficina(item.rawId!);
+                                }
+                              } else if (chart1Data.level === 3) {
+                                if (filterSede === 0) {
+                                  setFilterOficina(item.rawId!);
+                                }
+                              }
+                            }}
+                            onMouseEnter={(e) => {
+                              if (isClickable) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.02)';
+                            }}
+                            onMouseLeave={(e) => {
+                              if (isClickable) e.currentTarget.style.backgroundColor = 'transparent';
+                            }}
+                          >
+                            {/* Name */}
+                            <span style={{ 
+                              color: 'var(--text-primary)', 
+                              fontSize: fontSizeName, 
+                              fontWeight: '700', 
+                              whiteSpace: 'nowrap', 
+                              overflow: 'hidden', 
+                              textOverflow: 'ellipsis', 
+                              flex: nameFlex
+                            }}>
+                              {item.name}
+                            </span>
+
+                            {/* Bar Container */}
+                            <div style={{ flex: 1, height: barHeight, backgroundColor: 'var(--bg-input)', borderRadius: '3px', overflow: 'hidden', display: 'flex' }}>
+                              {item.total > 0 && (
+                                <div style={{ width: `${pctTotal}%`, height: '100%', backgroundColor: barColor, borderRadius: '3px' }}></div>
+                              )}
+                            </div>
+
+                            {/* Total Value */}
+                            <span style={{ 
+                              color: barColor, 
+                              fontSize: fontSizeVal, 
+                              fontWeight: '900', 
+                              minWidth: '42px', 
+                              textAlign: 'right' 
+                            }}>
+                              {formatNum(item.total)}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                }
+              })()}
+            </div>
           </div>
         </div>
 
@@ -760,17 +1975,172 @@ export const InternoDashboard: React.FC = () => {
               <h3>Desglose Estructural Interactivo</h3>
               <p>Navega la jerarquía de expedientes (Sede → Ámbito → Oficina → Profesional). Haz clic en una columna para profundizar.</p>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              <div style={{ display: 'flex', gap: '12px', fontSize: '10px', fontWeight: '700' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ width: '10px', height: '10px', background: 'linear-gradient(180deg, #00dfd8, #007cf0)', borderRadius: '50%', boxShadow: '0 0 6px rgba(0,223,216,0.4)' }}></span>
-                  <span>NO TUPA</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ width: '10px', height: '10px', background: 'linear-gradient(180deg, #ff0080, #7928ca)', borderRadius: '50%', boxShadow: '0 0 6px rgba(255,0,128,0.4)' }}></span>
-                  <span>TUPA</span>
-                </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+              {/* Selector de Vista (TUPA / PLAZOS) */}
+              <div className="view-mode-toggle" style={{ display: 'inline-flex', backgroundColor: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', padding: '2px', gap: '2px' }}>
+                <button
+                  onClick={() => setStructViewMode('TUPA')}
+                  style={{
+                    padding: '3px 10px',
+                    fontSize: '9.5px',
+                    fontWeight: '800',
+                    borderRadius: '18px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    backgroundColor: structViewMode === 'TUPA' ? 'var(--primary)' : 'transparent',
+                    color: structViewMode === 'TUPA' ? '#000000' : 'var(--text-secondary)'
+                  }}
+                >
+                  TUPA
+                </button>
+                <button
+                  onClick={() => setStructViewMode('PLAZOS')}
+                  style={{
+                    padding: '3px 10px',
+                    fontSize: '9.5px',
+                    fontWeight: '800',
+                    borderRadius: '18px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    backgroundColor: structViewMode === 'PLAZOS' ? 'var(--primary)' : 'transparent',
+                    color: structViewMode === 'PLAZOS' ? '#000000' : 'var(--text-secondary)'
+                  }}
+                >
+                  PLAZOS
+                </button>
               </div>
+
+              {/* Leyenda Dinámica */}
+              {structViewMode === 'TUPA' ? (
+                <div style={{ display: 'flex', gap: '12px', fontSize: '10px', fontWeight: '700' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ width: '10px', height: '10px', background: 'linear-gradient(180deg, #00dfd8, #007cf0)', borderRadius: '50%', boxShadow: '0 0 6px rgba(0,223,216,0.4)' }}></span>
+                    <span>NO TUPA</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ width: '10px', height: '10px', background: 'linear-gradient(180deg, #ff0080, #7928ca)', borderRadius: '50%', boxShadow: '0 0 6px rgba(255,0,128,0.4)' }}></span>
+                    <span>TUPA</span>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: '6px', fontSize: '9px', fontWeight: '800', alignItems: 'center' }}>
+                  {[
+                    { id: 'VERDE', label: 'A Tiempo', color: '#22c55e' },
+                    { id: 'AMARILLO', label: 'Límite', color: '#f59e0b' },
+                    { id: 'ANARANJADO', label: 'Finales', color: '#ea580c' },
+                    { id: 'ROJO', label: 'Fuera Plazo', color: 'var(--danger)' },
+                    { id: 'SIN_PLAZO', label: 'Sin Plazo', color: '#5b6582' }
+                  ].map(pill => {
+                    const isSelected = structSemaforoFilter.includes(pill.id);
+                    const isAnySelected = structSemaforoFilter.length > 0;
+                    const active = !isAnySelected || isSelected;
+                    return (
+                      <div
+                        key={pill.id}
+                        onClick={() => {
+                          setStructSemaforoFilter(prev =>
+                            prev.includes(pill.id)
+                              ? prev.filter(s => s !== pill.id)
+                              : [...prev, pill.id]
+                          );
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '3px',
+                          cursor: 'pointer',
+                          opacity: active ? 1 : 0.45,
+                          padding: '2px 5px',
+                          borderRadius: '4px',
+                          backgroundColor: isSelected ? 'rgba(255,255,255,0.06)' : 'transparent',
+                          border: `1px solid ${isSelected ? pill.color : 'transparent'}`,
+                          transition: 'all 0.2s',
+                          userSelect: 'none'
+                        }}
+                      >
+                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: pill.color }}></span>
+                        <span style={{ color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{pill.label}</span>
+                      </div>
+                    );
+                  })}
+                  {/* Botón Informativo de Plazos */}
+                  <div style={{ position: 'relative', marginLeft: '4px' }}>
+                    <button
+                      onClick={() => setShowPlazosInfo(!showPlazosInfo)}
+                      style={{
+                        background: showPlazosInfo ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255,255,255,0.04)',
+                        border: `1px solid ${showPlazosInfo ? 'var(--primary)' : 'rgba(255,255,255,0.1)'}`,
+                        color: showPlazosInfo ? 'var(--primary)' : 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        borderRadius: '50%',
+                        width: '18px',
+                        height: '18px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '10px',
+                        fontWeight: '900',
+                        transition: 'all 0.2s',
+                        padding: 0
+                      }}
+                      title="¿Cómo se evalúan los plazos?"
+                    >
+                      ?
+                    </button>
+                    {showPlazosInfo && (
+                      <div style={{
+                        position: 'absolute',
+                        top: '24px',
+                        right: 0,
+                        width: '320px',
+                        background: 'rgba(13, 17, 45, 0.97)',
+                        backdropFilter: 'blur(20px)',
+                        border: '1px solid rgba(56, 189, 248, 0.2)',
+                        borderRadius: '10px',
+                        padding: '14px 16px',
+                        zIndex: 100,
+                        boxShadow: '0 12px 40px rgba(0,0,0,0.5)',
+                        fontSize: '10px',
+                        lineHeight: '1.6',
+                        color: 'var(--text-secondary)'
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                          <span style={{ fontWeight: '900', fontSize: '11px', color: 'var(--text-primary)', letterSpacing: '0.5px', textTransform: 'uppercase' }}>Lógica de Plazos</span>
+                          <button onClick={() => setShowPlazosInfo(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px', fontSize: '14px', lineHeight: 1 }}>✕</button>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#22c55e', flexShrink: 0 }}></span>
+                            <span><strong style={{ color: '#22c55e' }}>VERDE (40%)</strong> — Los primeros 40% del plazo total.</span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#f59e0b', flexShrink: 0 }}></span>
+                            <span><strong style={{ color: '#f59e0b' }}>AMARILLO (30%)</strong> — Los siguientes 30% del plazo total.</span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#ea580c', flexShrink: 0 }}></span>
+                            <span><strong style={{ color: '#ea580c' }}>ANARANJADO (30%)</strong> — Los últimos 30% del plazo total.</span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--danger)', flexShrink: 0 }}></span>
+                            <span><strong style={{ color: 'var(--danger)' }}>ROJO</strong> — El plazo se ha excedido.</span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#5b6582', flexShrink: 0 }}></span>
+                            <span><strong style={{ color: '#5b6582' }}>SIN PLAZO</strong> — No se ha asignado plazo al expediente.</span>
+                          </div>
+                        </div>
+                        <div style={{ marginTop: '10px', padding: '8px 10px', backgroundColor: 'rgba(56, 189, 248, 0.05)', borderRadius: '6px', border: '1px solid rgba(56, 189, 248, 0.1)', fontSize: '9.5px', color: 'var(--text-muted)' }}>
+                          💡 Haz clic en los indicadores de la leyenda para filtrar visualmente el gráfico. Puedes seleccionar múltiples colores.
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
               <button
                 onClick={() => handleExportChart(chart2Ref, setCopiedChart2)}
                 title={copiedChart2 ? "¡Copiado!" : "Exportar Gráfico (Copiar)"}
@@ -807,7 +2177,6 @@ export const InternoDashboard: React.FC = () => {
                 )}
               </button>
             </div>
-          </div>
 
           <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
             {/* Breadcrumb Navigation */}
@@ -816,7 +2185,7 @@ export const InternoDashboard: React.FC = () => {
                 style={{ color: drilldownPath.length === 0 ? 'var(--text-primary)' : 'var(--primary)', cursor: drilldownPath.length === 0 ? 'default' : 'pointer', transition: 'color var(--transition-fast)' }}
                 onClick={() => setDrilldownPath([])}
               >
-                Nacional (Todos los Ámbitos)
+                {filterSede === 0 ? 'Sede Central (Todas las Oficinas)' : filterSede === 1 ? 'Nacional (Todos los Ámbitos)' : 'Todas las Sedes (Nacional)'}
               </span>
 
               {drilldownPath.length > 0 && (
@@ -826,7 +2195,7 @@ export const InternoDashboard: React.FC = () => {
                     style={{ color: drilldownPath.length === 1 ? 'var(--text-primary)' : 'var(--primary)', cursor: drilldownPath.length === 1 ? 'default' : 'pointer', transition: 'color var(--transition-fast)' }}
                     onClick={() => setDrilldownPath([drilldownPath[0]])}
                   >
-                    {sortedRawData.find(g => g.idx === drilldownPath[0])?.name || 'Ámbito'}
+                    {sortedRawData.find(g => g.idx === drilldownPath[0])?.name.replace("SC - ", "").replace("Sede Central - ", "") || 'Ámbito/Oficina'}
                   </span>
                 </>
               )}
@@ -871,7 +2240,9 @@ export const InternoDashboard: React.FC = () => {
                     return <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>No hay datos para mostrar en este nivel.</div>;
                   }
 
-                  const maxVal = Math.max(...currentItems.map(i => Math.max(i.tupa, i.noTupa)), 1); // Grouped bars max height depends on max of individual stacks, not total
+                  const maxVal = structViewMode === 'TUPA'
+                    ? Math.max(...currentItems.map(i => Math.max(i.tupa, i.noTupa)), 1)
+                    : Math.max(...currentItems.map(i => i.total), 1);
                   const barCount = currentItems.length;
                   const svgWidth = Math.max(containerWidth, barCount * 45);
                   const svgHeight = Math.max(350, containerHeight);
@@ -901,86 +2272,193 @@ export const InternoDashboard: React.FC = () => {
                         {currentItems.map((item, idx) => {
                           const spacing = (svgWidth - 100) / Math.max(currentItems.length, 1);
                           const groupWidth = Math.min(48, spacing * 0.7);
-                          const singleBarWidth = (groupWidth / 2) - 2;
-
-                          // Centered inside its cell
+                          const cleanName = item.name.replace("SC - ", "");
+                          const shortName = barCount > 15 && cleanName.length > 15
+                            ? cleanName.substring(0, 15) + '...'
+                            : cleanName;
                           const xPosCenter = 60 + spacing * 0.5 + idx * spacing;
-                          const xPosNoTupa = xPosCenter - groupWidth / 2;
-                          const xPosTupa = xPosCenter + 2;
 
-                          const heightTupa = (item.tupa / maxVal) * chartHeight;
-                          const heightNoTupa = (item.noTupa / maxVal) * chartHeight;
+                          if (structViewMode === 'TUPA') {
+                            const singleBarWidth = (groupWidth / 2) - 2;
+                            const xPosNoTupa = xPosCenter - groupWidth / 2;
+                            const xPosTupa = xPosCenter + 2;
 
-                          const yTupa = chartBottomY - heightTupa;
-                          const yNoTupa = chartBottomY - heightNoTupa;
+                            const heightTupa = (item.tupa / maxVal) * chartHeight;
+                            const heightNoTupa = (item.noTupa / maxVal) * chartHeight;
 
-                          const shortName = barCount > 15 && item.name.length > 15
-                            ? item.name.substring(0, 15) + '...'
-                            : item.name;
+                            const yTupa = chartBottomY - heightTupa;
+                            const yNoTupa = chartBottomY - heightNoTupa;
 
-                          return (
-                            <g
-                              key={item.id}
-                              style={{ cursor: level < 2 ? 'pointer' : 'default', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }}
-                              onClick={() => {
-                                if (level === 0 && item.rawId !== undefined) {
-                                  setDrilldownPath([item.rawId]);
-                                } else if (level === 1 && item.rawId !== undefined) {
-                                  setDrilldownPath([...drilldownPath, item.rawId]);
-                                }
-                              }}
-                              className="drilldown-bar-group"
-                            >
-                              <title>{item.name} | Total: {item.total} | TUPA: {item.tupa} | NO TUPA: {item.noTupa}</title>
-
-                              <rect x={xPosCenter - (groupWidth * 0.7)} y="10" width={groupWidth * 1.4} height={chartBottomY + 10} fill="rgba(255,255,255,0.02)" rx="8" style={{ opacity: 0, transition: 'opacity 0.2s' }} className="hover-bg-rect" />
-
-                              {/* Background Tracks */}
-                              <rect x={xPosNoTupa} y={20} width={singleBarWidth} height={chartHeight} fill="rgba(255,255,255,0.04)" rx={singleBarWidth / 2} />
-                              <rect x={xPosTupa} y={20} width={singleBarWidth} height={chartHeight} fill="rgba(255,255,255,0.04)" rx={singleBarWidth / 2} />
-
-                              {/* Data Bars */}
-                              {heightNoTupa > 0 && (
-                                <rect x={xPosNoTupa} y={yNoTupa} width={singleBarWidth} height={heightNoTupa} fill="url(#gradNoTupa)" rx={singleBarWidth / 2} className="bar-rect" />
-                              )}
-
-                              {heightTupa > 0 && (
-                                <rect x={xPosTupa} y={yTupa} width={singleBarWidth} height={heightTupa} fill="url(#gradTupa)" rx={singleBarWidth / 2} className="bar-rect" />
-                              )}
-
-                              {/* No TUPA Label */}
-                              {heightNoTupa > 0 && (
-                                <text x={xPosNoTupa + singleBarWidth / 2} y={yNoTupa - 6} fill="#00dfd8" fontSize="9.5" fontWeight="800" textAnchor="middle">
-                                  {formatNum(item.noTupa)}
-                                </text>
-                              )}
-
-                              {/* TUPA Label */}
-                              {heightTupa > 0 && (
-                                <text x={xPosTupa + singleBarWidth / 2} y={yTupa - 6} fill="#ff0080" fontSize="9.5" fontWeight="800" textAnchor="middle">
-                                  {formatNum(item.tupa)}
-                                </text>
-                              )}
-
-                              {/* Group Total Text */}
-                              <text x={xPosCenter} y={chartBottomY + 16} fill="var(--text-primary)" fontSize="11" fontWeight="800" textAnchor="middle">
-                                {formatNum(item.total)}
-                              </text>
-
-                              {/* X-Axis Label */}
-                              <text
-                                x={xPosCenter}
-                                y={chartBottomY + 32}
-                                fill="var(--text-secondary)"
-                                fontSize="9"
-                                fontWeight="600"
-                                textAnchor="end"
-                                transform={`rotate(-30, ${xPosCenter}, ${chartBottomY + 32})`}
+                            return (
+                              <g
+                                key={item.id}
+                                style={{ cursor: level < 2 ? 'pointer' : 'default', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }}
+                                onClick={() => {
+                                  if (level === 0 && item.rawId !== undefined) {
+                                    setDrilldownPath([item.rawId]);
+                                  } else if (level === 1 && item.rawId !== undefined) {
+                                    setDrilldownPath([...drilldownPath, item.rawId]);
+                                  }
+                                }}
+                                className="drilldown-bar-group"
                               >
-                                {shortName}
-                              </text>
-                            </g>
-                          );
+                                <title>{cleanName} | Total: {item.total} | TUPA: {item.tupa} | NO TUPA: {item.noTupa}</title>
+
+                                <rect x={xPosCenter - (groupWidth * 0.7)} y="10" width={groupWidth * 1.4} height={chartBottomY + 10} fill="rgba(255,255,255,0.02)" rx="8" style={{ opacity: 0, transition: 'opacity 0.2s' }} className="hover-bg-rect" />
+
+                                {/* Background Tracks */}
+                                <rect x={xPosNoTupa} y={20} width={singleBarWidth} height={chartHeight} fill="rgba(255,255,255,0.04)" rx={singleBarWidth / 2} />
+                                <rect x={xPosTupa} y={20} width={singleBarWidth} height={chartHeight} fill="rgba(255,255,255,0.04)" rx={singleBarWidth / 2} />
+
+                                {/* Data Bars */}
+                                {heightNoTupa > 0 && (
+                                  <rect x={xPosNoTupa} y={yNoTupa} width={singleBarWidth} height={heightNoTupa} fill="url(#gradNoTupa)" rx={singleBarWidth / 2} className="bar-rect" />
+                                )}
+
+                                {heightTupa > 0 && (
+                                  <rect x={xPosTupa} y={yTupa} width={singleBarWidth} height={heightTupa} fill="url(#gradTupa)" rx={singleBarWidth / 2} className="bar-rect" />
+                                )}
+
+                                {/* No TUPA Label */}
+                                {heightNoTupa > 0 && (
+                                  <text x={xPosNoTupa + singleBarWidth / 2} y={yNoTupa - 6} fill="#00dfd8" fontSize="9.5" fontWeight="800" textAnchor="middle">
+                                    {formatNum(item.noTupa)}
+                                  </text>
+                                )}
+
+                                {/* TUPA Label */}
+                                {heightTupa > 0 && (
+                                  <text x={xPosTupa + singleBarWidth / 2} y={yTupa - 6} fill="#ff0080" fontSize="9.5" fontWeight="800" textAnchor="middle">
+                                    {formatNum(item.tupa)}
+                                  </text>
+                                )}
+
+                                {/* Group Total Text */}
+                                <text x={xPosCenter} y={chartBottomY + 16} fill="var(--text-primary)" fontSize="11" fontWeight="800" textAnchor="middle">
+                                  {formatNum(item.total)}
+                                </text>
+
+                                {/* X-Axis Label */}
+                                <text
+                                  x={xPosCenter}
+                                  y={chartBottomY + 32}
+                                  fill="var(--text-secondary)"
+                                  fontSize="9"
+                                  fontWeight="600"
+                                  textAnchor="end"
+                                  transform={`rotate(-30, ${xPosCenter}, ${chartBottomY + 32})`}
+                                >
+                                  {shortName}
+                                </text>
+                              </g>
+                            );
+                          } else {
+                            // PLAZOS stacked bars mode
+                            const counts = structChartSemaforoCounts[item.name] || { VERDE: 0, AMARILLO: 0, ANARANJADO: 0, ROJO: 0, SIN_PLAZO: 0 };
+                            const totalVal = counts.VERDE + counts.AMARILLO + counts.ANARANJADO + counts.ROJO + counts.SIN_PLAZO;
+
+                            const hVerde = (counts.VERDE / maxVal) * chartHeight;
+                            const hAmarillo = (counts.AMARILLO / maxVal) * chartHeight;
+                            const hAnaranjado = (counts.ANARANJADO / maxVal) * chartHeight;
+                            const hRojo = (counts.ROJO / maxVal) * chartHeight;
+                            const hSinPlazo = (counts.SIN_PLAZO / maxVal) * chartHeight;
+
+                            const barWidth = Math.min(26, groupWidth * 0.8);
+                            const xPosBar = xPosCenter - barWidth / 2;
+
+                            let currentY = chartBottomY;
+
+                            const segments = [
+                              { key: 'VERDE', h: hVerde, count: counts.VERDE, color: '#22c55e', name: 'A Tiempo' },
+                              { key: 'AMARILLO', h: hAmarillo, count: counts.AMARILLO, color: '#f59e0b', name: 'En el Límite' },
+                              { key: 'ANARANJADO', h: hAnaranjado, count: counts.ANARANJADO, color: '#ea580c', name: 'Días Finales' },
+                              { key: 'ROJO', h: hRojo, count: counts.ROJO, color: 'var(--danger)', name: 'Fuera de Plazo' },
+                              { key: 'SIN_PLAZO', h: hSinPlazo, count: counts.SIN_PLAZO, color: '#5b6582', name: 'Sin Plazo' }
+                            ].filter(s => s.h > 0);
+
+                            return (
+                              <g
+                                key={item.id}
+                                style={{ cursor: level < 2 ? 'pointer' : 'default', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }}
+                                onClick={() => {
+                                  if (level === 0 && item.rawId !== undefined) {
+                                    setDrilldownPath([item.rawId]);
+                                  } else if (level === 1 && item.rawId !== undefined) {
+                                    setDrilldownPath([...drilldownPath, item.rawId]);
+                                  }
+                                }}
+                                className="drilldown-bar-group"
+                              >
+                                <title>
+                                  {cleanName} | Total: {totalVal} docs&#10;
+                                  - A Tiempo (Verde): {counts.VERDE}&#10;
+                                  - En Límite (Amarillo): {counts.AMARILLO}&#10;
+                                  - Días Finales (Naranja): {counts.ANARANJADO}&#10;
+                                  - Fuera Plazo (Rojo): {counts.ROJO}&#10;
+                                  - Sin Plazo: {counts.SIN_PLAZO}
+                                </title>
+
+                                <rect x={xPosCenter - (groupWidth * 0.7)} y="10" width={groupWidth * 1.4} height={chartBottomY + 10} fill="rgba(255,255,255,0.02)" rx="8" style={{ opacity: 0, transition: 'opacity 0.2s' }} className="hover-bg-rect" />
+
+                                {/* Background Track */}
+                                <rect x={xPosBar} y={20} width={barWidth} height={chartHeight} fill="rgba(255,255,255,0.03)" rx="3" />
+
+                                {/* Stacked segments */}
+                                {segments.map(seg => {
+                                  const segmentY = currentY - seg.h;
+                                  currentY -= seg.h;
+                                  const isSelected = structSemaforoFilter.includes(seg.key);
+                                  const isAnyFilterActive = structSemaforoFilter.length > 0;
+
+                                  return (
+                                    <rect
+                                      key={seg.key}
+                                      x={xPosBar}
+                                      y={segmentY}
+                                      width={barWidth}
+                                      height={seg.h}
+                                      fill={seg.color}
+                                      rx="1.5"
+                                      style={{
+                                        transition: 'all 0.2s',
+                                        stroke: isSelected ? '#ffffff' : 'none',
+                                        strokeWidth: isSelected ? 1.5 : 0,
+                                        opacity: !isAnyFilterActive || isSelected ? 1 : 0.2
+                                      }}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setStructSemaforoFilter(prev =>
+                                          prev.includes(seg.key)
+                                            ? prev.filter(s => s !== seg.key)
+                                            : [...prev, seg.key]
+                                        );
+                                      }}
+                                    >
+                                      <title>{seg.name}: {seg.count} ({totalVal > 0 ? ((seg.count / totalVal) * 100).toFixed(1) : 0}%)</title>
+                                    </rect>
+                                  );
+                                })}
+
+                                {/* Group Total Text */}
+                                <text x={xPosCenter} y={chartBottomY + 16} fill="var(--text-primary)" fontSize="11" fontWeight="800" textAnchor="middle">
+                                  {formatNum(totalVal)}
+                                </text>
+
+                                {/* X-Axis Label */}
+                                <text
+                                  x={xPosCenter}
+                                  y={chartBottomY + 32}
+                                  fill="var(--text-secondary)"
+                                  fontSize="9"
+                                  fontWeight="600"
+                                  textAnchor="end"
+                                  transform={`rotate(-30, ${xPosCenter}, ${chartBottomY + 32})`}
+                                >
+                                  {shortName}
+                                </text>
+                              </g>
+                            );
+                          }
                         })}
                         <line x1="40" y1={chartBottomY} x2={svgWidth - 20} y2={chartBottomY} stroke="rgba(255,255,255,0.15)" strokeWidth="2" />
                       </svg>
@@ -1239,104 +2717,107 @@ export const InternoDashboard: React.FC = () => {
 
 
 
-      {/* 6. Row 3: Vertical Bar Chart for Procedures */}
-      <div ref={chart6Ref} className="chart-card" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column' }}>
-        <div className="chart-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div className="chart-card-title-box">
-            <h3>PROCEDIMIENTOS (TUPA / NO TUPA)</h3>
-            <p>Clasificación de expedientes por tipo de trámite. (Mostrando Top 30)</p>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <div style={{ display: 'flex', gap: '12px', fontSize: '10px', fontWeight: '700' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ width: '10px', height: '10px', background: 'linear-gradient(180deg, #00dfd8, #007cf0)', borderRadius: '50%' }}></span>
-                <span>NO TUPA</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ width: '10px', height: '10px', background: 'linear-gradient(180deg, #f59e0b, #ea580c)', borderRadius: '50%' }}></span>
-                <span>TUPA</span>
-              </div>
+      {/* 6. Row 3: Procedures & traffic light plazos (Semáforo) */}
+      <div className="interno-grid-row3">
+        {/* Left Column: Procedures */}
+        <div ref={chart6Ref} className="chart-card" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', height: '100%' }}>
+          <div className="chart-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="chart-card-title-box">
+              <h3>PROCEDIMIENTOS (TUPA / NO TUPA)</h3>
+              <p>Clasificación de expedientes por tipo de trámite. (Mostrando Top 30)</p>
             </div>
-            <button
-              onClick={() => handleExportChart(chart6Ref, setCopiedChart6)}
-              title={copiedChart6 ? "¡Copiado!" : "Exportar Gráfico (Copiar)"}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: copiedChart6 ? 'var(--success)' : 'rgba(255, 255, 255, 0.4)',
-                cursor: 'pointer',
-                padding: '6px',
-                borderRadius: '4px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'all 0.2s',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.color = copiedChart6 ? 'var(--success)' : '#ffffff';
-                e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.color = copiedChart6 ? 'var(--success)' : 'rgba(255, 255, 255, 0.4)';
-                e.currentTarget.style.backgroundColor = 'transparent';
-              }}
-            >
-              {copiedChart6 ? (
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              ) : (
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
-                  <circle cx="12" cy="13" r="4"></circle>
-                </svg>
-              )}
-            </button>
-          </div>
-        </div>
-
-        <div style={{ overflowX: 'auto', display: 'flex', alignItems: 'flex-end', height: '280px', marginTop: '16px', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '6px', gap: '16px', width: '100%', minWidth: 0 }}>
-          {Object.entries(metrics.procedures)
-            .filter(([_, count]) => count.total > 0)
-            .sort((a, b) => b[1].total - a[1].total)
-            .slice(0, 30) // Limit to top 30
-            .map(([name, count], idx) => {
-              const maxVal = Math.max(...Object.values(metrics.procedures).map(p => p.total), 1);
-              const pctHeight = (count.total / maxVal) * 200;
-
-              const isTupa = count.tupa > count.noTupa;
-              const barGradient = isTupa ? 'linear-gradient(180deg, #f59e0b, #ea580c)' : 'linear-gradient(180deg, #00dfd8, #007cf0)';
-              const textColor = isTupa ? '#f59e0b' : '#00dfd8';
-
-              return (
-                <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '50px', gap: '6px' }}>
-                  <div style={{ position: 'relative', width: '20px', height: '200px', backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: '20px', display: 'flex', alignItems: 'flex-end', marginTop: '12px' }} title={`${name}: ${formatNum(count.total)}`}>
-                    {count.total > 0 && (
-                      <span style={{ position: 'absolute', bottom: `${pctHeight + 4}px`, left: '50%', transform: 'translateX(-50%)', fontSize: '9px', fontWeight: '800', color: textColor }}>
-                        {count.total >= 1000 ? `${(count.total / 1000).toFixed(1)}k` : count.total}
-                      </span>
-                    )}
-                    <div
-                      style={{
-                        width: '100%',
-                        height: `${pctHeight}px`,
-                        background: barGradient,
-                        borderRadius: '20px',
-                        opacity: 1
-                      }}
-                    ></div>
-                  </div>
-                  <div style={{ height: 'auto', minHeight: '40px', width: '100%', display: 'flex', justifyContent: 'center' }}>
-                    <span
-                      style={{ fontSize: '8px', color: 'var(--text-secondary)', fontWeight: '800', textTransform: 'uppercase', textAlign: 'center', lineHeight: '1.2', display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical', overflow: 'hidden', textOverflow: 'ellipsis', wordBreak: 'break-word', padding: '0 2px' }}
-                      title={name}
-                    >
-                      {name}
-                    </span>
-                  </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <div style={{ display: 'flex', gap: '12px', fontSize: '10px', fontWeight: '700' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ width: '10px', height: '10px', background: 'linear-gradient(180deg, #00dfd8, #007cf0)', borderRadius: '50%' }}></span>
+                  <span>NO TUPA</span>
                 </div>
-              );
-            })}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ width: '10px', height: '10px', background: 'linear-gradient(180deg, #f59e0b, #ea580c)', borderRadius: '50%' }}></span>
+                  <span>TUPA</span>
+                </div>
+              </div>
+              <button
+                onClick={() => handleExportChart(chart6Ref, setCopiedChart6)}
+                title={copiedChart6 ? "¡Copiado!" : "Exportar Gráfico (Copiar)"}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: copiedChart6 ? 'var(--success)' : 'rgba(255, 255, 255, 0.4)',
+                  cursor: 'pointer',
+                  padding: '6px',
+                  borderRadius: '4px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = copiedChart6 ? 'var(--success)' : '#ffffff';
+                  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = copiedChart6 ? 'var(--success)' : 'rgba(255, 255, 255, 0.4)';
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }}
+              >
+                {copiedChart6 ? (
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                ) : (
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                    <circle cx="12" cy="13" r="4"></circle>
+                  </svg>
+                )}
+              </button>
+            </div>
+          </div>
+
+          <div style={{ overflowX: 'auto', display: 'flex', alignItems: 'flex-end', height: '240px', marginTop: '16px', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '6px', gap: '16px', width: '100%', minWidth: 0 }}>
+            {Object.entries(metrics.procedures)
+              .filter(([_, count]) => count.total > 0)
+              .sort((a, b) => b[1].total - a[1].total)
+              .slice(0, 30) // Limit to top 30
+              .map(([name, count], idx) => {
+                const maxVal = Math.max(...Object.values(metrics.procedures).map(p => p.total), 1);
+                const pctHeight = (count.total / maxVal) * 160;
+
+                const isTupa = count.tupa > count.noTupa;
+                const barGradient = isTupa ? 'linear-gradient(180deg, #f59e0b, #ea580c)' : 'linear-gradient(180deg, #00dfd8, #007cf0)';
+                const textColor = isTupa ? '#f59e0b' : '#00dfd8';
+
+                return (
+                  <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '50px', gap: '6px' }}>
+                    <div style={{ position: 'relative', width: '20px', height: '160px', backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: '20px', display: 'flex', alignItems: 'flex-end', marginTop: '12px' }} title={`${name}: ${formatNum(count.total)}`}>
+                      {count.total > 0 && (
+                        <span style={{ position: 'absolute', bottom: `${pctHeight + 4}px`, left: '50%', transform: 'translateX(-50%)', fontSize: '9px', fontWeight: '800', color: textColor }}>
+                          {count.total >= 1000 ? `${(count.total / 1000).toFixed(1)}k` : count.total}
+                        </span>
+                      )}
+                      <div
+                        style={{
+                          width: '100%',
+                          height: `${pctHeight}px`,
+                          background: barGradient,
+                          borderRadius: '20px',
+                          opacity: 1
+                        }}
+                      ></div>
+                    </div>
+                    <div style={{ height: 'auto', minHeight: '40px', width: '100%', display: 'flex', justifyContent: 'center' }}>
+                      <span
+                        style={{ fontSize: '8px', color: 'var(--text-secondary)', fontWeight: '800', textTransform: 'uppercase', textAlign: 'center', lineHeight: '1.2', display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical', overflow: 'hidden', textOverflow: 'ellipsis', wordBreak: 'break-word', padding: '0 2px' }}
+                        title={name}
+                      >
+                        {name}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
         </div>
       </div>
 
