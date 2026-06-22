@@ -12,12 +12,12 @@ output_dir = "public/data"
 print("Loading CSV databases...")
 # Load OD
 df_od = pd.read_csv(od_csv_path, sep=';', encoding='utf-8-sig', encoding_errors='replace')
-df_od.columns = [col.strip() for col in df_od.columns]
+df_od.columns = [col.replace('Fecha de Creaci\xf3n de Tramite', 'Fecha de Creacion de Tramite').strip() for col in df_od.columns]
 df_od['sede_code'] = 1  # 1 = Órganos Desconcentrados
 
 # Load SC
 df_sc = pd.read_csv(sc_csv_path, sep=';', encoding='utf-8-sig', encoding_errors='replace')
-df_sc.columns = [col.strip() for col in df_sc.columns]
+df_sc.columns = [col.replace('Fecha de Creaci\xf3n de Tramite', 'Fecha de Creacion de Tramite').strip() for col in df_sc.columns]
 df_sc['sede_code'] = 0  # 0 = Sede Central
 
 print(f"Loaded OD: {len(df_od)} rows. Columns: {list(df_od.columns)}")
@@ -112,9 +112,9 @@ for idx, row in df_od.iterrows():
     tupa_code = 0 if tupa_raw in ['SI', 'S', 'TUPA'] else 1
     
     # Date processing
-    fec_ingreso_raw = row.get('Fecha Ingreso Ultimo Escritorio', '')
-    if pd.isna(fec_ingreso_raw):
-        fec_ingreso_raw = row.get('Fecha de Creación de Trámite', '')
+    fec_ingreso_raw = row.get('Fecha de Creacion de Tramite', '')
+    if pd.isna(fec_ingreso_raw) or str(fec_ingreso_raw).strip() == '':
+        fec_ingreso_raw = row.get('Fecha Ingreso Ultimo Escritorio', '')
     
     fec_ing_dt = pd.to_datetime(fec_ingreso_raw, dayfirst=True, errors='coerce')
     ingreso_date = fec_ing_dt.strftime('%Y-%m-%d') if not pd.isna(fec_ing_dt) else '1900-01-01'
@@ -214,9 +214,9 @@ for idx, row in df_sc.iterrows():
     tupa_code = 0 if tupa_raw in ['SI', 'S', 'TUPA'] else 1
     
     # Date processing
-    fec_ingreso_raw = row.get('Fecha Ingreso Ultimo Escritorio', '')
-    if pd.isna(fec_ingreso_raw):
-        fec_ingreso_raw = row.get('Fecha de Creación de Trámite', '')
+    fec_ingreso_raw = row.get('Fecha de Creacion de Tramite', '')
+    if pd.isna(fec_ingreso_raw) or str(fec_ingreso_raw).strip() == '':
+        fec_ingreso_raw = row.get('Fecha Ingreso Ultimo Escritorio', '')
     
     fec_ing_dt = pd.to_datetime(fec_ingreso_raw, dayfirst=True, errors='coerce')
     ingreso_date = fec_ing_dt.strftime('%Y-%m-%d') if not pd.isna(fec_ing_dt) else '1900-01-01'

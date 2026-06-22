@@ -68,8 +68,8 @@ export default function App() {
   const [ambito, setAmbito] = useState(-1); // -1: All, index otherwise
   const [stateFilter, setStateFilter] = useState(-1); // -1: All, 0: Derivado, 1: Archivado, 2: Calidad, 3: Observado
 
-  // Tab navigation state (Panel Ejecutivo is default)
-  const [activeTab, setActiveTab] = useState('ejecutivo');
+  // Tab navigation state (Panel Interno is default)
+  const [activeTab, setActiveTab] = useState('interno');
 
   // Sidebar Search State
   const [sidebarSearch, setSidebarSearch] = useState('');
